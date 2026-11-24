@@ -1,0 +1,409 @@
+{
+  "title": "A Arca de Noé",
+  "niche_skill": "crayon_book",
+  "aspect_ratio": "16:9",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "tts_plugin": "recorded_voice",
+  "tts_locale": "pt-BR",
+  "voice_id": "voices/demo_crayon/manifest.json",
+  "tts_fallback_plugin": null,
+  "music_track": "assets/music/comedy_pizzicato.wav",
+  "media_plugin": "openmoji_stickers",
+  "scenes": [
+    {
+      "id": "s01",
+      "plugin": "crayon_book",
+      "narration": "Noé começou a erguer uma arca no quintal.",
+      "pause_after_sec": 0.66,
+      "background": "yard",
+      "camera": "zoom_in_fast",
+      "headline": "A arca\nde Noé",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.2,
+          "y": 0.84,
+          "pose": "neutral",
+          "expression": "neutral",
+          "accessory": "beard_robe",
+          "scale": 0.61,
+          "key_poses": [
+            {
+              "at_word": "arca",
+              "pose": "pointing"
+            }
+          ]
+        },
+        {
+          "name": "vizinho",
+          "x": 0.84,
+          "y": 0.86,
+          "pose": "neutral",
+          "expression": "skeptical",
+          "accessory": "worker_cap",
+          "color": "indigo",
+          "scale": 0.53,
+          "key_poses": [
+            {
+              "at_sec": 1.78,
+              "pose": "shrug",
+              "expression": "skeptical"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "ark",
+          "x": 0.54,
+          "y": 0.79
+        }
+      ]
+    },
+    {
+      "id": "s02",
+      "plugin": "crayon_book",
+      "narration": "O vizinho achou graça. Nem rio passava por ali.",
+      "pause_after_sec": 0.66,
+      "background": "yard",
+      "camera": "pan_left",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.23,
+          "y": 0.84,
+          "pose": "neutral",
+          "expression": "skeptical",
+          "accessory": "beard_robe",
+          "scale": 0.58,
+          "key_poses": [
+            {
+              "at_sec": 2.08,
+              "pose": "pointing"
+            }
+          ]
+        },
+        {
+          "name": "vizinho",
+          "x": 0.79,
+          "y": 0.86,
+          "pose": "neutral",
+          "expression": "smug",
+          "accessory": "worker_cap",
+          "color": "indigo",
+          "scale": 0.57,
+          "key_poses": [
+            {
+              "at_word": "graça",
+              "pose": "shrug",
+              "expression": "happy"
+            },
+            {
+              "at_word": "rio",
+              "pose": "pointing",
+              "expression": "skeptical"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "ark",
+          "x": 0.51,
+          "y": 0.76
+        },
+        {
+          "kind": "cactus",
+          "x": 0.89,
+          "y": 0.76,
+          "scale": 0.31
+        }
+      ]
+    },
+    {
+      "id": "s03",
+      "plugin": "crayon_book",
+      "narration": "Noé nem levantou a cabeça. Continuou serrando.",
+      "pause_after_sec": 0.83,
+      "background": "workshop",
+      "camera": "zoom_out",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.28,
+          "y": 0.84,
+          "pose": "neutral",
+          "expression": "neutral",
+          "accessory": "beard_robe",
+          "scale": 0.87,
+          "key_poses": [
+            {
+              "at_word": "Continuou",
+              "pose": "pointing"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "planks",
+          "x": 0.56,
+          "y": 0.79,
+          "scale": 0.8
+        },
+        {
+          "kind": "saw",
+          "scale": 0.43,
+          "attached_to": "noe",
+          "at_word": "Continuou"
+        }
+      ]
+    },
+    {
+      "id": "s04",
+      "plugin": "crayon_book",
+      "narration": "Os bichos apareceram no caminho, de dois em dois.",
+      "pause_after_sec": 0.72,
+      "background": "parade",
+      "camera": "pan_right",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.14,
+          "y": 0.87,
+          "pose": "neutral",
+          "expression": "happy",
+          "accessory": "beard_robe",
+          "color": "clay",
+          "scale": 0.56,
+          "key_poses": [
+            {
+              "at_word": "bichos",
+              "pose": "pointing"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "ark",
+          "x": 0.61,
+          "y": 0.77
+        },
+        {
+          "kind": "animals",
+          "x": 0.27,
+          "y": 0.88,
+          "scale": 0.62,
+          "walk_to": [
+            0.54,
+            0.81
+          ],
+          "walk_seconds": 2.6
+        }
+      ]
+    },
+    {
+      "id": "s05",
+      "plugin": "crayon_book",
+      "narration": "A primeira gota caiu, e o riso do vizinho sumiu.",
+      "pause_after_sec": 0.7,
+      "background": "storm",
+      "camera": "zoom_in_fast",
+      "cut_music_for_punchline": true,
+      "punchline_at_word": "gota",
+      "characters": [
+        {
+          "name": "vizinho",
+          "x": 0.23,
+          "y": 0.86,
+          "pose": "neutral",
+          "expression": "smug",
+          "accessory": "worker_cap",
+          "color": "indigo",
+          "scale": 0.58,
+          "key_poses": [
+            {
+              "at_word": "gota",
+              "pose": "hands_on_head",
+              "expression": "shocked"
+            },
+            {
+              "at_word": "sumiu",
+              "pose": "neutral",
+              "expression": "worried"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "cloud",
+          "x": 0.35,
+          "y": 0.39,
+          "scale": 0.92,
+          "motion": "drift"
+        },
+        {
+          "kind": "ark",
+          "x": 0.6,
+          "y": 0.81
+        }
+      ],
+      "wash": "rain",
+      "wash_at_word": "gota"
+    },
+    {
+      "id": "s06",
+      "plugin": "crayon_book",
+      "narration": "Choveu quarenta dias. A arca balançava, mas seguia à tona.",
+      "pause_after_sec": 0.7,
+      "background": "sea",
+      "camera": "float",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.446,
+          "y": 0.658,
+          "pose": "neutral",
+          "expression": "worried",
+          "accessory": "sailor",
+          "color": "clay",
+          "scale": 0.62,
+          "key_poses": [
+            {
+              "at_word": "balançava",
+              "pose": "hands_on_head",
+              "expression": "worried"
+            },
+            {
+              "at_word": "seguia",
+              "pose": "neutral",
+              "expression": "neutral"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "ark",
+          "x": 0.54,
+          "y": 0.865,
+          "layer": "ark_hull",
+          "motion": "bob"
+        }
+      ],
+      "wash": "rain",
+      "wash_prepainted": true
+    },
+    {
+      "id": "s07",
+      "plugin": "crayon_book",
+      "narration": "Quando a chuva passou, uma pomba voltou com um ramo no bico.",
+      "pause_after_sec": 0.93,
+      "background": "mountains",
+      "camera": "zoom_out",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.262,
+          "y": 0.84,
+          "pose": "neutral",
+          "expression": "happy",
+          "accessory": "beard_robe",
+          "scale": 0.73,
+          "key_poses": [
+            {
+              "at_word": "pomba",
+              "pose": "pointing",
+              "expression": "happy"
+            },
+            {
+              "at_word": "ramo",
+              "pose": "cheering",
+              "expression": "happy"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "mountain",
+          "x": 0.74,
+          "y": 0.76,
+          "scale": 0.9
+        }
+      ],
+      "stickers": [
+        {
+          "kind": "olive_branch",
+          "x": 0.4,
+          "y": 0.55,
+          "scale": 0.29,
+          "rotation": 150,
+          "on_dove": true,
+          "at_sec": 0.89
+        },
+        {
+          "kind": "dove",
+          "x": 0.4,
+          "y": 0.556,
+          "scale": 1.06,
+          "flight_from": [
+            0.805,
+            0.32
+          ],
+          "flight_seconds": 2.04,
+          "at_sec": 0.9
+        }
+      ]
+    },
+    {
+      "id": "s08",
+      "plugin": "crayon_book",
+      "narration": "Noé pisou em terra firme. Atrás dele, o céu se abriu.",
+      "pause_after_sec": 1.22,
+      "background": "shore",
+      "camera": "float",
+      "characters": [
+        {
+          "name": "noe",
+          "x": 0.235,
+          "y": 0.85,
+          "pose": "neutral",
+          "expression": "happy",
+          "accessory": "beard_robe",
+          "color": "clay",
+          "scale": 0.58,
+          "key_poses": [
+            {
+              "at_word": "firme",
+              "pose": "pointing"
+            },
+            {
+              "at_word": "céu",
+              "pose": "cheering",
+              "expression": "happy"
+            }
+          ]
+        }
+      ],
+      "props": [
+        {
+          "kind": "rainbow",
+          "x": 0.39,
+          "y": 0.69,
+          "scale": 1.43
+        },
+        {
+          "kind": "ark",
+          "x": 0.61,
+          "y": 0.82
+        }
+      ],
+      "wash": "stars"
+    }
+  ]
+}

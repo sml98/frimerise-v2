@@ -1,0 +1,27 @@
+{
+  "style": "crayon_book",
+  "formats": {
+    "16:9": {"width": 1920, "height": 1080, "fps": 24},
+    "9:16": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 24,
+      "mobile_safe_box_px": {"left": 65, "top": 288, "right": 888, "bottom": 1248}
+    }
+  },
+  "page": {"min_seconds": 3, "target_seconds": 4, "max_seconds": 5, "draw_on_seconds": 0.9,
+           "pause_after_sec": 0.65},
+  "narration": {
+    "person": "third",
+    "tts_locale": "pt-BR",
+    "tts_plugin": "edge_kokoro_tts",
+    "voice_id": "pt-BR-FranciscaNeural",
+    "tts_fallback_plugin": null
+  },
+  "media": {"media_plugin": "openmoji_stickers", "qc_plugin": "ffprobe_audit"},
+  "scene": {
+    "backgrounds": ["yard", "workshop", "parade", "storm", "sea", "mountains", "shore"],
+    "cameras": ["static", "zoom_in_fast", "zoom_out", "pan_left", "pan_right", "float"],
+    "washes": ["rain", "stars"]
+  }
+}

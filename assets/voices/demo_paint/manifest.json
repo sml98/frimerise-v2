@@ -1,0 +1,114 @@
+{"locale": "pt-BR", "provider": "edge_tts", "voice": "pt-BR-FranciscaNeural",
+  "recordings": [
+    {
+      "text": "O vizinho viu Noé fazendo um barco no quintal.",
+      "audio": "s01.flac",
+      "words": [
+        ["O", 0.1043, 0.1995],
+        ["vizinho", 0.213, 0.7293],
+        ["viu", 0.7429, 0.9467],
+        ["Noé", 0.9603, 1.1913],
+        ["fazendo", 1.2049, 1.6668],
+        ["um", 1.6804, 1.762],
+        ["barco", 1.7755, 2.1424],
+        ["no", 2.156, 2.2647],
+        ["quintal.", 2.2782, 2.8353]
+      ]
+    },
+    {
+      "text": "Ô, Noé… você vai navegar onde?",
+      "audio": "s02.flac",
+      "words": [
+        ["Ô,", 0.13, 0.2659],
+        ["Noé…", 0.293, 0.6191],
+        ["você", 0.8093, 1.0947],
+        ["vai", 1.1082, 1.2577],
+        ["navegar", 1.2713, 1.7197],
+        ["onde?", 1.7332, 2.168]
+      ]
+    },
+    {
+      "text": "Noé nem respondeu. Voltou a serrar.",
+      "audio": "s03.flac",
+      "words": [
+        ["Noé", 0.13, 0.4425],
+        ["nem", 0.4561, 0.6599],
+        ["respondeu.", 0.6735, 1.3528],
+        ["Voltou", 1.6382, 2.0594],
+        ["a", 2.0729, 2.1272],
+        ["serrar.", 2.1409, 2.6164]
+      ]
+    },
+    {
+      "text": "Depois vieram os bichos. De dois em dois.",
+      "audio": "s04.flac",
+      "words": [
+        ["Depois", 0.13, 0.6327],
+        ["vieram", 0.6463, 1.0131],
+        ["os", 1.0267, 1.1626],
+        ["bichos.", 1.1762, 1.7876],
+        ["De", 2.0729, 2.2495],
+        ["dois", 2.2631, 2.5213],
+        ["em", 2.5349, 2.7387],
+        ["dois.", 2.7523, 3.2414]
+      ]
+    },
+    {
+      "text": "O vizinho ainda ria quando caiu a primeira gota.",
+      "audio": "s05.flac",
+      "words": [
+        ["O", 0.13, 0.2251],
+        ["vizinho", 0.2387, 0.6871],
+        ["ainda", 0.7007, 1.0267],
+        ["ria", 1.0403, 1.3257],
+        ["quando", 1.3392, 1.611],
+        ["caiu", 1.6246, 1.9642],
+        ["a", 1.9778, 2.0322],
+        ["primeira", 2.0458, 2.467],
+        ["gota.", 2.4805, 2.9289]
+      ]
+    },
+    {
+      "text": "Quarenta dias de chuva. E aquele cheiro de bicho.",
+      "audio": "s06.flac",
+      "words": [
+        ["Quarenta", 0.13, 0.6599],
+        ["dias", 0.6735, 0.9996],
+        ["de", 1.0132, 1.1083],
+        ["chuva.", 1.1218, 1.6789],
+        ["E", 1.9642, 2.0865],
+        ["aquele", 2.1001, 2.4534],
+        ["cheiro", 2.467, 2.8746],
+        ["de", 2.8882, 2.9969],
+        ["bicho.", 3.0105, 3.486]
+      ]
+    },
+    {
+      "text": "Aí a pomba voltou com um ramo no bico.",
+      "audio": "s07.flac",
+      "words": [
+        ["Aí", 0.13, 0.4153],
+        ["a", 0.4289, 0.524],
+        ["pomba", 0.5376, 0.8909],
+        ["voltou", 0.9045, 1.3257],
+        ["com", 1.3392, 1.4887],
+        ["um", 1.5023, 1.5702],
+        ["ramo", 1.5838, 1.842],
+        ["no", 1.8555, 1.9778],
+        ["bico.", 1.9914, 2.4262]
+      ]
+    },
+    {
+      "text": "Terra! Ah, que saudade do chão.",
+      "audio": "s08.flac",
+      "words": [
+        ["Terra!", 0.13, 0.6327],
+        ["Ah,", 0.918, 1.0675],
+        ["que", 1.217, 1.3257],
+        ["saudade", 1.3392, 1.8963],
+        ["do", 1.9099, 2.0186],
+        ["chão.", 2.0322, 2.4534]
+      ]
+    }
+  ]
+}

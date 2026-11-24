@@ -1,0 +1,9 @@
+pydantic>=2.11,<3
+Pillow>=11,<13
+numpy>=1.26,<3
+CairoSVG>=2.7,<3
+edge-tts>=7.2,<8
+faster-whisper>=1.2,<2
+# Released faster-whisper versions still pass metadata_errors to av.open.
+av<19
+pytest>=8,<10
