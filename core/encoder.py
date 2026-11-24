@@ -33,20 +33,45 @@ def select_encoder(width, height, fps):
             return name, device, output
 
 
-def encode_frames(frames, *, width, height, fps, frame_count, output):
-    name, device, options = select_encoder(width, height, fps)
-    command = [
-        *FFMPEG, "-v", "error", "-y", *device, "-f", "rawvideo", "-pixel_format", "rgb24",
-        "-video_size", f"{width}x{height}", "-framerate", str(fps), "-i", "pipe:0", *options, str(output),
-    ]
+def encode_frames(frames, *, width, height, fps, frame_count, output, settings=None, chunk=False,
+                  frame_format="rgb24", background=None):
+    name, device, options = settings or select_encoder(width, height, fps)
+    if chunk:
+        options = [*options, "-threads", "3", "-bf", "0", "-video_track_timescale", str(fps),
+                   "-movie_timescale", str(fps)]
+    if frame_format == "rgb24":
+        video_input = ["-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", f"{width}x{height}"]
+    else:
+        video_input = ["-f", "image2pipe", "-c:v", "mjpeg" if frame_format == "jpeg" else "png"]
+    command = [*FFMPEG, "-v", "error", "-y", *device, "-threads", "2",
+               *video_input, "-framerate", str(fps), "-i", "pipe:0"]
+    if background:
+        if frame_format != "png":
+            raise ValueError("B-roll compositing requires PNG frames with alpha")
+        if name == "h264_vaapi":
+            options = options[:2] + options[4:]
+        output_filter = "format=nv12,hwupload" if name == "h264_vaapi" else "format=yuv420p"
+        composition = (
+            f"[1:v]fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1,setpts=PTS-STARTPTS,format=yuv420p,"
+            "eq=brightness=-0.16:contrast=1.06:saturation=0.42,"
+            "colorbalance=rs=-0.028:bs=0.030:bm=0.015,vignette=PI/5[plate];"
+            f"[0:v]format=rgba,setsar=1,setpts=PTS-STARTPTS[graphics];"
+            f"[plate][graphics]overlay=shortest=1:format=auto,{output_filter}[composited]"
+        )
+        command.extend(("-stream_loop", "-1", "-threads", "2", "-i", str(background), "-filter_complex_threads", "2",
+                        "-filter_complex", composition, "-map", "[composited]"))
+    command.extend((*options, str(output)))
     size = width * height * 3
     with TemporaryFile() as errors, subprocess.Popen(command, stdin=subprocess.PIPE, stderr=errors) as pipe:
         count = 0
         try:
             for frame in frames:
                 count += 1
-                if len(frame) != size or count > frame_count:
-                    raise ValueError(f"Invalid RGB24 frame {count}. Expected {size} bytes and {frame_count} frames")
+                valid = (len(frame) == size if frame_format == "rgb24" else
+                         frame.startswith(b"\xff\xd8" if frame_format == "jpeg" else b"\x89PNG\r\n\x1a\n"))
+                if not valid or count > frame_count:
+                    raise ValueError(f"Invalid {frame_format} frame {count}. Expected {frame_count} frames")
                 pipe.stdin.write(frame)
             pipe.stdin.close()
         except BrokenPipeError:

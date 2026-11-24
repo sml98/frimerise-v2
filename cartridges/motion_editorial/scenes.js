@@ -114,10 +114,12 @@ function barcode_to_qr(tl, seconds) {
   const parcels = [0, 1, 2].map((i) => parcel(s, i));
   const laser = scanBeam(s, 146, 160, 388, red);
   const errors = label(s, "ERRO ×1", 340, 451, red, 22);
-  tl.set([...parcels, laser, errors], { autoAlpha: 0 }, 0);
+  tl.set([...parcels.slice(1), laser, errors], { autoAlpha: 0 }, 0);
   parcels.forEach((entry, i) => {
     const beat = i * .11;
-    tl.fromTo(entry, { x: -151, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: t(.045), immediateRender: false }, t(beat));
+    if (i) tl.fromTo(entry, { x: -151, autoAlpha: 0 }, {
+      x: 0, autoAlpha: 1, duration: t(.045), immediateRender: false,
+    }, t(beat));
     tl.to(entry, { x: 8, yoyo: true, repeat: 3, duration: t(.007), ease: "none" }, t(beat + .057));
     tl.to(entry, { x: 157, autoAlpha: 0, duration: t(.041) }, t(beat + .077));
   });
@@ -176,7 +178,7 @@ function go_board_markers(tl, seconds) {
   const stones = arrangement.map(([x, y], i) => svg(panel, "circle", {
     cx: 143 + x * 26, cy: 64 + y * 26, r: 10.2, fill: i % 2 ? white : dark, stroke: "#9eabb8",
   }));
-  tl.fromTo(panel, { scale: .95, y: 17, autoAlpha: .25 }, {
+  tl.fromTo(panel, { scale: .95, y: 17, autoAlpha: .95 }, {
     scale: 1, y: 0, autoAlpha: 1, transformOrigin: "center", duration: t(.19),
   }, 0);
   tl.fromTo(stones, { autoAlpha: 0, y: -34, scale: .65 }, {
@@ -239,7 +241,7 @@ function bar_comparison(tl, seconds, payload) {
     const count = { value: 0 };
     const start = t(.058 + index * .055);
     const duration = t(.22);
-    tl.fromTo(row, { autoAlpha: 0, x: -15 }, { autoAlpha: 1, x: 0, duration: t(.105) }, start);
+    if (index) tl.fromTo(row, { autoAlpha: 0, x: -15 }, { autoAlpha: 1, x: 0, duration: t(.105) }, start);
     tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration }, start);
     tl.fromTo(count, { value: 0 }, { value, duration, onUpdate: () => {
       number.textContent = count.value >= value ? display : formatter.format(Math.round(count.value));
@@ -304,9 +306,9 @@ function open_patent_network(tl, seconds) {
   box(seal, 196, 207, 288, 96, "#132e2b", { rx: 12, stroke: green, "stroke-width": 1.7 });
   label(seal, "PATENTE ABERTA", 340, 242, green, 19);
   label(seal, "$0 ROYALTIES", 340, 279, white, 31);
-  tl.fromTo(seal, { autoAlpha: 0, scale: .67 }, {
-    autoAlpha: 1, scale: 1, transformOrigin: "center", duration: t(.23), ease: "back.out(1.65)",
-  }, t(.038));
+  tl.fromTo(seal, { scale: .84 }, {
+    scale: 1, transformOrigin: "center", duration: t(.23), ease: "back.out(1.65)",
+  }, 0);
   tl.to(links.map(({ path }) => path), {
     attr: { "stroke-dashoffset": 0 }, duration: t(.17), stagger: t(.022), ease: "power2.out",
   }, t(.35));
@@ -342,21 +344,389 @@ function camera(tl, seconds, transition) {
   tl.fromTo(".grid-plane", { transformPerspective: 740, rotationX: 51, x: -14, y: -13 }, {
     x: 24, y: 35, rotationX: 55, duration: seconds, ease: "none",
   }, 0);
+  tl.fromTo(".backdrop", { scale: 1.03, xPercent: -.5, yPercent: .2 }, {
+    scale: 1.13, xPercent: 1.2, yPercent: -.5, duration: seconds, ease: "none",
+  }, 0);
   tl.fromTo(".glow-amber", { opacity: .55, xPercent: -4, scale: .94 }, {
     opacity: 1, xPercent: 0, scale: 1.09, duration: seconds / 2, yoyo: true, repeat: 1, ease: "sine.inOut",
   }, 0);
   tl.fromTo(".glow-emerald", { opacity: 1, yPercent: -3, scale: 1 }, {
     opacity: .58, yPercent: 1, scale: 1.14, duration: seconds / 2, yoyo: true, repeat: 1, ease: "sine.inOut",
   }, 0);
-  tl.fromTo(".wipe", { xPercent: 0 }, { xPercent: 103, duration: transition, ease: "power3.inOut" }, 0);
-  tl.fromTo(".wipe", { xPercent: -103 }, {
-    xPercent: 0, duration: transition, ease: "power3.inOut", immediateRender: false,
+  tl.fromTo(".wipe", { xPercent: -112, opacity: .78 }, {
+    xPercent: 510, opacity: .2, duration: transition, ease: "power2.inOut",
+  }, 0);
+  tl.fromTo(".wipe", { xPercent: -112, opacity: .2 }, {
+    xPercent: 510, opacity: .85, duration: transition, ease: "power2.inOut", immediateRender: false,
   }, seconds - transition);
   tl.fromTo(graphic, { scale: 1.07 }, { scale: 1, duration: transition, ease: "power3.out" }, 0);
   tl.to(graphic, { scale: 1.055, duration: transition, ease: "power2.in" }, seconds - transition);
-  tl.fromTo([kicker, heading, kpi, subtitle], { autoAlpha: 0, x: -23 }, {
-    autoAlpha: 1, x: 0, duration: seconds * .16, stagger: seconds * .027, ease: "power3.out",
-  }, transition * .64);
+  tl.fromTo([kicker, heading, kpi, subtitle], { x: -8 }, {
+    x: 0, duration: transition, stagger: .018, ease: "power3.out",
+  }, 0);
+}
+
+const palettes = { amber: "#f59e0b", emerald: "#34e5ab", cyan: "#56d9f6", crimson: "#fb687a", violet: "#ba9dff" };
+
+function stagePanel(className) {
+  return div("module-panel " + className, graphic);
+}
+
+function enter(tl, nodes, seconds, start = .11, stride = .08) {
+  tl.fromTo(nodes, { y: 19, autoAlpha: 0, scale: .97 }, {
+    y: 0, autoAlpha: 1, scale: 1, duration: seconds * .17, stagger: seconds * stride,
+    ease: "power3.out",
+  }, start * seconds);
+}
+
+function count(tl, target, value, seconds, { start = .12, end = .64, unit = "", display } = {}) {
+  const data = { n: 0 };
+  tl.to(data, { n: value, duration: seconds * (end - start), ease: "power2.out", onUpdate: () => {
+    const finished = Math.abs(data.n - value) < .001;
+    target.textContent = finished && display ? display : formatter.format(finished ? value : Math.round(data.n)) + unit;
+  } }, seconds * start);
+  target.textContent = "0" + unit;
+}
+
+function kpi_hero(tl, seconds, { data }) {
+  const panel = stagePanel("hero-module");
+  const number = div("module-number", panel);
+  const delta = div("module-tag", panel, data.delta);
+  const context = div("module-context", panel, data.context);
+  enter(tl, [delta, context], seconds);
+  count(tl, number, data.value, seconds, {unit: data.unit});
+}
+
+function generic_bars(tl, seconds, { bars, data }) {
+  const chart = stagePanel("bars-module");
+  const max = Math.max(...bars.map(({ value }) => value));
+  bars.forEach(({ label, value, display }, i) => {
+    const row = div("comparison-row", chart);
+    const header = div("bar-header", row);
+    div("bar-label", header, label);
+    const number = div("bar-value", header);
+    const fill = div("bar-fill", div("bar-track", row));
+    fill.style.width = (100 * value / max) + "%";
+    const start = .12 + i * .065;
+    if (i) enter(tl, row, seconds, start);
+    tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration: seconds * .37 }, seconds * start);
+    count(tl, number, value, seconds, {start, end: start + .37, display});
+  });
+  if (data.context) enter(tl, div("module-context", chart, data.context), seconds, .65);
+}
+
+function line_chart(tl, seconds, { data }) {
+  const s = art();
+  const low = Math.min(0, ...data.points.map(({ value }) => value));
+  const high = Math.max(...data.points.map(({ value }) => value), low + 1);
+  const step = 535 / (data.points.length - 1);
+  const yAt = (value) => 416 - 304 * (value - low) / (high - low);
+  const pts = data.points.map((point, i) => ({ ...point, x: 85 + i * step, y: yAt(point.value) }));
+  for (let i = 0; i < 5; i++) {
+    const value = low + (high - low) * i / 4;
+    const y = yAt(value);
+    line(s, 84, y, 625, y, "#536879", { opacity: .56, "stroke-dasharray": "3 6" });
+    label(s, formatter.format(Math.round(value)), 48, y + 6, "#aebcca", 19);
+  }
+  pts.forEach(({ x, label: stamp }, i) => {
+    if (pts.length <= 7 || i % 2 === 0 || i === pts.length - 1) label(s, stamp, x, 455, "#aebcca", 18);
+  });
+  const path = "M" + pts.map(({ x, y }) => x + " " + y).join("L");
+  const defs = svg(s, "defs", {});
+  const gradient = svg(defs, "linearGradient", { id: "line-fill", x1: "0", x2: "0", y1: "0", y2: "1" });
+  svg(gradient, "stop", { offset: "0%", "stop-color": "var(--act)", "stop-opacity": .48 });
+  svg(gradient, "stop", { offset: "100%", "stop-color": "var(--act)", "stop-opacity": .015 });
+  const clip = svg(defs, "clipPath", { id: "line-reveal" });
+  const window = box(clip, 84, 53, 0, 366, white);
+  svg(s, "path", { d: path + "L620 416H85Z", fill: "url(#line-fill)", "clip-path": "url(#line-reveal)" });
+  const trace = svg(s, "path", { d: path, fill: "none", stroke: "var(--act)", "stroke-width": 5.5,
+    "stroke-linecap": "round", "stroke-linejoin": "round", pathLength: 1,
+    "stroke-dasharray": 1, "stroke-dashoffset": 1 });
+  tl.to(trace, { attr: { "stroke-dashoffset": 0 }, duration: seconds * .52, ease: "none" }, seconds * .12);
+  tl.to(window, { attr: { width: 544 }, duration: seconds * .52, ease: "none" }, seconds * .12);
+  pts.forEach(({ x, y, peak, value }, i) => {
+    const mark = svg(s, "g", {});
+    svg(mark, "circle", { cx: x, cy: y, r: peak ? 8 : 4, fill: peak ? "var(--act)" : white,
+      stroke: dark, "stroke-width": 2 });
+    if (peak) label(mark, formatter.format(value) + data.unit, Math.min(607, x), y - 19, "var(--act)", 23);
+    enter(tl, mark, seconds, .16 + i / (pts.length - 1) * .48);
+  });
+  if (data.context) label(s, data.context, 341, 487, "#aebcca", 17);
+}
+
+function timeline_steps(tl, seconds, { data }) {
+  const panel = stagePanel("timeline-module");
+  const track = div("timeline-items", panel);
+  const rail = div("timeline-rail", track);
+  track.style.setProperty("--columns", data.items.length);
+  const items = data.items.map(({ label, date, detail }) => {
+    const item = div("event-card", track);
+    div("event-date", item, date);
+    div("event-pin", item);
+    div("event-title", item, label);
+    if (detail) div("event-note", item, detail);
+    return item;
+  });
+  tl.fromTo(rail, { scaleX: 0 }, { scaleX: 1, duration: seconds * .61, ease: "none" }, seconds * .10);
+  enter(tl, items.slice(1), seconds, .13, .48 / data.items.length);
+}
+
+function split_vs(tl, seconds, { data }) {
+  const panel = stagePanel("split-module");
+  const sides = data.items.map(({ label, detail, date }) => {
+    const card = div("comparison-side", panel);
+    div("module-tag", card, date);
+    div("split-title", card, label);
+    div("module-context", card, detail);
+    return card;
+  });
+  const mark = div("vs-mark", panel, "×");
+  enter(tl, [sides[1], mark], seconds, .11, .115);
+}
+
+function process_flow(tl, seconds, { data }) {
+  const panel = stagePanel("process-module");
+  const rail = div("flow-rail", panel);
+  const pulse = div("flow-pulse", rail);
+  const rows = data.items.map(({ label, detail }, index) => {
+    const row = div("flow-row", panel);
+    div("flow-step", row, String(index + 1).padStart(2, "0"));
+    const copy = div("flow-copy", row);
+    div("event-title", copy, label);
+    if (detail) div("event-note", copy, detail);
+    return row;
+  });
+  enter(tl, rows.slice(1), seconds, .12);
+  return (p) => {
+    pulse.style.top = Math.max(0, ((p - .2) * 2.6) % 1) * 100 + "%";
+  };
+}
+
+function network_nodes(tl, seconds, { data }) {
+  const s = art();
+  const links = svg(s, "g", {});
+  const layer = svg(s, "g", {});
+  const sparks = svg(s, "g", {});
+  const paths = data.items.map(({ label: name, icon }, index) => {
+    const angle = (index / data.items.length - .25) * Math.PI * 2;
+    const x = 340 + Math.cos(angle) * 212;
+    const y = 242 + Math.sin(angle) * 155;
+    const route = svg(links, "path", {
+      d: "M340 242Q" + ((340 + x) / 2 + (y - 242) * .15) + " " + ((242 + y) / 2 - (x - 340) * .17)
+         + " " + x + " " + y,
+      fill: "none", stroke: "var(--act)", "stroke-width": 2.3,
+      pathLength: 1, "stroke-dasharray": 1, "stroke-dashoffset": 1, opacity: .66,
+    });
+    const node = svg(layer, "g", {});
+    svg(node, "circle", { cx: x, cy: y, r: 30, fill: "#152331", stroke: "var(--act)", "stroke-width": 2.6 });
+    svg(node, "use", { href: "vendor/editorial-icons.svg#" + icon, x: x - 13, y: y - 13,
+      width: 26, height: 26, fill: "none", stroke: white, "stroke-width": 1.8,
+      "stroke-linecap": "round", "stroke-linejoin": "round" });
+    label(node, name.length > 21 ? name.slice(0, 20) + "…" : name, x, y + 51, white, 18);
+    const spark = svg(sparks, "circle", { cx: 340, cy: 242, r: 4.8, fill: "var(--act)", opacity: 0 });
+    tl.to(route, { attr: { "stroke-dashoffset": 0 }, duration: seconds * .22 }, seconds * (.18 + index * .043));
+    enter(tl, node, seconds, .24 + index * .043);
+    return { route, spark, length: route.getTotalLength() };
+  });
+  const center = svg(s, "g", {});
+  box(center, 247, 208, 186, 69, "#102332", {rx: 14, stroke: "var(--act)", "stroke-width": 3});
+  label(center, data.context || "Rede", 340, 251, white, 21);
+  return (p) => paths.forEach(({ route, spark, length }, i) => {
+    const elapsed = p - .29 - .047 * i;
+    const phase = Math.max(0, elapsed * 4.6) % 1;
+    const point = route.getPointAtLength(phase * length);
+    spark.setAttribute("cx", point.x);
+    spark.setAttribute("cy", point.y);
+    spark.setAttribute("opacity", elapsed > 0 ? .48 + .52 * Math.sin(Math.PI * phase) : 0);
+  });
+}
+
+function checklist_reveal(tl, seconds, { data, captions }) {
+  const panel = stagePanel("checklist-module");
+  const words = captions.flatMap((block) => block.words);
+  const key = (text) => text.normalize("NFD").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+  let previous = .07;
+  data.items.forEach(({ label, detail }, i) => {
+    const row = div("check-row", panel);
+    div("check-icon", row, "✓");
+    const copy = div("flow-copy", row);
+    div("event-title", copy, label);
+    if (detail) div("event-note", copy, detail);
+    const first = key(label.split(" ")[0]);
+    const word = words.find(({ text, start }) => key(text) === first && start / seconds > previous);
+    const moment = Math.min(.79, Math.max(previous + .075, word ? word.start / seconds : .14 + i * .125));
+    if (i) enter(tl, row, seconds, moment);
+    previous = moment;
+  });
+}
+
+function quote_callout(tl, seconds, { data }) {
+  const panel = stagePanel("quote-module");
+  div("quote-mark", panel, "“");
+  const quote = div("quote-text", panel);
+  const tokens = data.quote.split(/\s+/).filter(Boolean).map((word, i) => {
+    if (i) quote.append(" ");
+    const span = document.createElement("span");
+    span.textContent = word;
+    quote.append(span);
+    return span;
+  });
+  const credit = div("module-context", panel, data.author);
+  if (tokens.length > 2) enter(tl, tokens.slice(2), seconds, .12, Math.min(.045, .57 / tokens.length));
+  enter(tl, credit, seconds, .68);
+}
+
+function news_headline(tl, seconds, { data, headline }) {
+  const panel = stagePanel("news-module");
+  const paper = div("news-paper", panel);
+  div("news-source", paper, data.source);
+  div("news-title", paper, data.headline || headline);
+  const body = div("news-body", paper);
+  const offset = data.highlight ? data.excerpt.indexOf(data.highlight) : -1;
+  if (offset < 0) {
+    body.textContent = data.excerpt;
+  } else {
+    body.append(data.excerpt.slice(0, offset));
+    const mark = document.createElement("mark");
+    mark.textContent = data.highlight;
+    body.append(mark, data.excerpt.slice(offset + data.highlight.length));
+    tl.fromTo(mark, { backgroundSize: "0% 100%" }, {
+      backgroundSize: "100% 100%", duration: seconds * .34, ease: "power1.inOut",
+    }, seconds * .32);
+  }
+  tl.fromTo(paper, { rotation: -3, y: 12, scale: .95 }, {
+    rotation: -1.1, y: 0, scale: 1, duration: seconds * .21, ease: "power2.out",
+  }, 0);
+}
+
+function creditText(credit) {
+  return credit ? [credit.source, credit.author, credit.license].filter(Boolean).join(" · ") : "";
+}
+
+function mediaPhoto(parent, payload) {
+  const frame = div("photo-frame", parent);
+  if (payload.media.photo) {
+    const image = document.createElement("img");
+    image.alt = payload.data.caption;
+    image.src = payload.media.photo;
+    frame.append(image);
+  } else {
+    div("photo-empty", frame, "Imagem indisponível");
+  }
+  return frame;
+}
+
+function photo_spotlight(tl, seconds, payload) {
+  const panel = stagePanel("photo-module");
+  const frame = mediaPhoto(panel, payload);
+  const [x, y] = payload.data.focus;
+  if (payload.media.photo) {
+    const focus = div("photo-focus", frame);
+    focus.style.left = x * 100 + "%";
+    focus.style.top = y * 100 + "%";
+    tl.fromTo(focus, { autoAlpha: 0, scale: .52 }, { autoAlpha: 1, scale: 1,
+      duration: seconds * .29, ease: "back.out(1.35)" }, seconds * .38);
+  }
+  const copy = div("photo-meta", panel);
+  div("event-title", copy, payload.data.caption);
+  div("media-credit", copy, creditText(payload.media.photoCredit));
+  tl.fromTo(frame, { rotationY: -7, rotationX: 4, transformPerspective: 900, scale: .94 }, {
+    rotationY: 0, rotationX: 0, scale: 1, duration: seconds * .42,
+  }, 0);
+  enter(tl, copy, seconds, .27);
+}
+
+function photo_split_kpi(tl, seconds, payload) {
+  const panel = stagePanel("photo-split-module");
+  const photo = div("photo-module", panel);
+  mediaPhoto(photo, payload);
+  const meta = div("photo-meta", photo);
+  div("photo-note", meta, payload.data.caption);
+  div("media-credit", meta, creditText(payload.media.photoCredit));
+  const stats = div("photo-stats", panel);
+  const number = div("module-number", stats);
+  div("module-context", stats, payload.data.context);
+  count(tl, number, payload.data.value, seconds, {unit: payload.data.unit});
+  enter(tl, [meta, stats], seconds, .09, .065);
+}
+
+function gauge_meter(tl, seconds, { data }) {
+  const s = art();
+  const settings = { d: "M142 322 A198 198 0 0 1 538 322", fill: "none", "stroke-width": 22,
+    "stroke-linecap": "round", pathLength: 100 };
+  svg(s, "path", { ...settings, stroke: "#425365" });
+  const meter = svg(s, "path", { ...settings, stroke: "var(--act)", "stroke-dasharray": 100,
+    "stroke-dashoffset": 100 });
+  tl.to(meter, { attr: { "stroke-dashoffset": 100 - data.value }, duration: seconds * .50 }, seconds * .12);
+  const number = label(s, "0%", 340, 298, "var(--act)", 92);
+  count(tl, number, data.value, seconds, { unit: "%" });
+  label(s, "0%", 143, 365, "#aebcca", 20);
+  label(s, "100%", 538, 365, "#aebcca", 20);
+  label(s, data.context, 340, 418, white, 24);
+}
+
+function terminal_code(_tl, _seconds, { data }) {
+  const panel = stagePanel("terminal-module");
+  const window = div("terminal-window", panel);
+  div("terminal-title", window, data.context);
+  const output = div("terminal-output", window);
+  const lines = data.lines.map(() => div("terminal-line", output));
+  const total = data.lines.reduce((sum, line) => sum + line.length + 3, 0);
+  return (p) => {
+    const initial = data.lines[0].length + 3;
+    let visible = initial + Math.floor(Math.min(1, Math.max(0, (p - .035) / .865)) * (total - initial));
+    lines.forEach((row, i) => {
+      const text = data.lines[i];
+      let state = "";
+      if (visible > 0) {
+        state = text.slice(0, visible);
+        if (visible < text.length + 3 && Math.floor(p * 18) % 2 === 0) state += " ▋";
+      }
+      row.textContent = state;
+      visible -= text.length + 3;
+    });
+  };
+}
+
+const modules = { kpi_hero, bar_comparison: generic_bars, line_chart, timeline_steps, split_vs,
+  process_flow, network_nodes, checklist_reveal, quote_callout, news_headline,
+  photo_spotlight, photo_split_kpi, gauge_meter, terminal_code };
+
+function setupBackground(payload) {
+  const plate = document.querySelector(".backdrop");
+  const credit = document.querySelector(".background-credit");
+  plate.replaceChildren();
+  document.body.dataset.bg = payload.bg_mode;
+  document.body.style.setProperty("--act", palettes[payload.accent] || amber);
+  credit.textContent = "";
+  if (payload.bg_mode === "broll_video") {
+    credit.textContent = payload.media.videoCredit ? "Arquivo ilustrativo · " + creditText(payload.media.videoCredit) : "";
+  }
+  if (["photo_duotone", "broll_dark"].includes(payload.bg_mode) && payload.media.photo) {
+    const image = document.createElement("img");
+    image.alt = "";
+    image.src = payload.media.photo;
+    plate.append(image);
+    if (!["photo_spotlight", "photo_split_kpi"].includes(payload.module)) {
+      credit.textContent = creditText(payload.media.photoCredit);
+    }
+  }
+}
+
+function applyOverlay(tl, seconds, payload) {
+  const zone = document.querySelector(".overlays");
+  zone.replaceChildren();
+  if (!payload.overlay_fx) return;
+  const text = payload.overlay_fx === "stamp_badge" ? payload.metric_badge : "";
+  const fx = div("overlay overlay-" + payload.overlay_fx, zone, text);
+  if (payload.overlay_fx === "laser_scan") {
+    tl.fromTo(fx, { yPercent: 0, opacity: 0 }, { yPercent: 1500, opacity: .9,
+      duration: seconds * .48, ease: "none" }, seconds * .27);
+    tl.to(fx, { opacity: 0, duration: seconds * .1 }, seconds * .73);
+  } else {
+    tl.fromTo(fx, { autoAlpha: 0, scale: .55, rotation: -7 }, { autoAlpha: 1, scale: 1, rotation: 0,
+      duration: seconds * .20, ease: "back.out(1.6)" }, seconds * .61);
+  }
 }
 
 const components = { barcode_to_qr, go_board_markers, bar_comparison, open_patent_network };
@@ -367,9 +737,10 @@ const badges = {
 };
 let composition;
 
-function setup(payload) {
+async function setup(payload) {
   composition?.timeline.kill();
   graphic.replaceChildren();
+  setupBackground(payload);
   kicker.textContent = payload.kicker;
   heading.textContent = payload.headline;
   kpi.textContent = payload.kpi;
@@ -379,11 +750,15 @@ function setup(payload) {
   const gap = parseFloat(getComputedStyle(header).rowGap);
   const used = kicker.offsetHeight + gap + (horizontal ? kpi.offsetHeight + subtitle.offsetHeight + 2 * gap : 0);
   fit(heading, header.clientHeight - used);
-  badge.textContent = payload.visual_type === "bar_comparison"
-    ? badges.bar_comparison : badges[payload.visual_type] && (payload.metric_badge || badges[payload.visual_type]) || "";
+  badge.textContent = payload.module
+    ? (payload.overlay_fx === "stamp_badge" ? "" : payload.metric_badge)
+    : payload.visual_type === "bar_comparison"
+      ? badges.bar_comparison : badges[payload.visual_type] && (payload.metric_badge || badges[payload.visual_type]) || "";
   const timeline = gsap.timeline({ paused: true, defaults: { ease: "power2.out" } });
   camera(timeline, payload.durationSec, payload.transitionSec ?? .28);
-  const beats = components[payload.visual_type](timeline, payload.durationSec, payload);
+  const build = payload.module ? modules[payload.module] : components[payload.visual_type];
+  const beats = build(timeline, payload.durationSec, payload);
+  applyOverlay(timeline, payload.durationSec, payload);
   if (badge.textContent) {
     timeline.fromTo(badge, { autoAlpha: 0, y: 14, scale: .86 }, {
       autoAlpha: 1, y: 0, scale: 1, duration: .145 * payload.durationSec, ease: "back.out(1.65)",
@@ -411,11 +786,11 @@ function updateCaption(time, state) {
   state.spans.forEach((span, i) => span.classList.toggle("spoken", i === active));
 }
 
-window.renderAt = (tSec, progress, payload) => {
-  if (composition?.payload !== payload) composition = setup(payload);
+window.renderAt = async (tSec, progress, payload) => {
+  if (composition?.payload !== payload) composition = await setup(payload);
   const time = Math.min(payload.durationSec, Math.max(0, tSec));
   composition.timeline.seek(time, false);
-  composition.beats(progress);
+  composition.beats?.(progress);
   updateCaption(time, composition);
   gsap.ticker.sleep();
 };

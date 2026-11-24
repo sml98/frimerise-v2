@@ -16,6 +16,7 @@ def run(*args, capture=False, **options):
 
 def render_environment(python, database, continuous):
     env = os.environ.copy()
+    env["FRIMERISE_COLAB"] = "1"
     if database.is_file():
         env["FRIMERISE_DB"] = str(database)
     if not continuous:
@@ -98,9 +99,9 @@ def main():
         args.extend(("--audio", str(job / "audio-input")))
     elif metadata.get("continuous"):
         args.append("--continuous")
-    for option in ("tts", "voice"):
+    for option in ("tts", "voice", "workers"):
         if value := metadata.get(option):
-            args.extend((f"--{option}", value))
+            args.extend((f"--{option}", str(value)))
     continuous = metadata.get("audio") or metadata.get("continuous") or spec.get("audio_mode") == "continuous"
     env = render_environment(python, db, continuous)
     report = json.loads(run(str(python), "-m", "core.engine", str(episode_path), str(output),
@@ -108,6 +109,9 @@ def main():
     if report["encoder"] != "h264_nvenc":
         raise RuntimeError(f"O render usou {report['encoder']}, mas o Colab exige h264_nvenc.")
     expected = {output.name, "10.png", "50.png", "90.png"}
+    credits = output.with_name(f"{output.stem}_fontes.md")
+    if credits.is_file():
+        expected.add(credits.name)
     if {path.name for path in artifacts.iterdir() if path.is_file() and path.stat().st_size} != expected:
         raise RuntimeError("O render precisa gerar um MP4 e três keyframes PNG.")
 

@@ -80,6 +80,7 @@ elif args[0] == "ssh":
     elif mode == "edge":
         assert metadata["tts"] == "edge_kokoro_tts"
         assert metadata["continuous"]
+        assert metadata["workers"] == 3
     else:
         with tempfile.TemporaryDirectory() as temporary:
             db = Path(temporary) / "frimerise.db"
@@ -101,7 +102,7 @@ else:
     if mode == "external":
         args.extend(("--audio", str(audio)))
     elif mode == "edge":
-        args.extend(("--continuous", "--tts", "edge_kokoro_tts"))
+        args.extend(("--continuous", "--tts", "edge_kokoro_tts", "--workers", "3"))
     if mode != "gemini":
         env["FRIMERISE_DB"] = str(tmp_path / "missing.db")
     result = subprocess.run([str(launcher), episode, *args], cwd=repo, env=env,

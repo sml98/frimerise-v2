@@ -14,6 +14,8 @@ from tempfile import TemporaryDirectory
 
 from .audio_aligner import align_audio
 from .encoder import encode_frames, run_ffmpeg
+from .html_adapter import encode_scenes
+from .media_fetcher import capture_media_credits, write_media_credits
 from .registry import TTSUnavailable, discover, get_plugin
 from .schema import SAMPLE_RATE, AudioTrackSpec, EpisodeSpec, SceneTiming
 
@@ -72,7 +74,7 @@ def _frames(timeline, renders):
             yield frame
 
 
-def _produce(spec, timeline, assets, services, directory, keyframes=None):
+def _produce(spec, timeline, assets, services, directory, keyframes=None, workers=None):
     styles, media, master, audit = services
     resources = [media(scene, timing, assets) if media else {}
                  for scene, timing in zip(spec.scenes, timeline, strict=True)]
@@ -81,8 +83,12 @@ def _produce(spec, timeline, assets, services, directory, keyframes=None):
     count = sum(timing.frame_count for timing in timeline)
     directory.mkdir()
     video, final = directory / "video.mp4", directory / "final.mp4"
-    encoder = encode_frames(_frames(timeline, renders), width=spec.width, height=spec.height,
-                            fps=spec.fps, frame_count=count, output=video)
+    if any(rendered.web for rendered in renders):
+        encoder = encode_scenes(timeline, renders, width=spec.width, height=spec.height, fps=spec.fps,
+                                output=video, workers=workers)
+    else:
+        encoder = encode_frames(_frames(timeline, renders), width=spec.width, height=spec.height,
+                                fps=spec.fps, frame_count=count, output=video)
     master(spec, timeline, renders, assets, video, final)
     return final, encoder, audit(final, spec=spec, frame_count=count, keyframes=keyframes)
 
@@ -104,10 +110,12 @@ def _write_alignment(path, spec, timeline):
 
 
 def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, continuous=False,
-           auto_scenes=False, alignment=None, reference_text=None):
+           auto_scenes=False, alignment=None, reference_text=None, workers=None):
     """Render and audit in a temporary directory before publishing the MP4."""
     discover()
     output = Path(output).absolute()
+    if workers is not None and workers < 1:
+        raise ValueError("workers deve ser no mínimo 1")
     if output.suffix.lower() != ".mp4":
         raise ValueError("The render destination must be an .mp4 file")
     continuous = audio is not None or continuous or spec.audio_mode == "continuous"
@@ -119,7 +127,7 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
         raise ValueError("Use destinos diferentes do arquivo de áudio original.")
     output.parent.mkdir(parents=True, exist_ok=True)
     assets_root = Path(assets_root)
-    with TemporaryDirectory(prefix=".frimerise-", dir=output.parent) as temporary:
+    with TemporaryDirectory(prefix=".frimerise-", dir=output.parent) as temporary, capture_media_credits() as credits:
         work = Path(temporary)
         if continuous:
             source = Path(audio).resolve() if audio is not None else _takes(spec, work, continuous=True)[0].path
@@ -133,7 +141,7 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
         audit = get_plugin("qc", spec.qc_plugin)
         services = styles, media, master, audit
         plan = get_plugin("exports", spec.niche_skill, optional=True) if spec.export_shorts_clips else None
-        final, encoder, report = _produce(spec, timeline, assets_root, services, work / "main", keyframes)
+        final, encoder, report = _produce(spec, timeline, assets_root, services, work / "main", keyframes, workers)
         exports = {output: final}
         for clip in plan(spec, timeline) if plan else ():
             if (not re.fullmatch(r"[a-z0-9_]+", clip.suffix)
@@ -147,11 +155,13 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
                               width=clip.width, height=clip.height, export_shorts_clips=False)
             offset = timeline[clip.first_scene].start_frame
             times = [replace(timing, start_frame=timing.start_frame - offset) for timing in timeline[span]]
-            exports[destination], _, _ = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}")
+            exports[destination], _, _ = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}",
+                                                  workers=workers)
         for destination, staged in exports.items():
             staged.replace(destination)
         if alignment:
             _write_alignment(Path(alignment), spec, timeline)
+        write_media_credits(output.with_name(f"{output.stem}_fontes.md"), credits)
     return encoder, report
 
 
@@ -197,6 +207,7 @@ def main():
     parser.add_argument("--style", help="style for an audio-only or plain-text episode")
     parser.add_argument("--aspect", choices=("9:16", "16:9"))
     parser.add_argument("--locale", help="speech locale for an audio-only or plain-text episode")
+    parser.add_argument("--workers", type=int, help="parallel web scene workers (default: 2 local, 4 on Colab)")
     add_audio_arguments(parser)
     args = parser.parse_args()
     automatic = args.episode is None or args.episode.suffix.lower() == ".txt"
@@ -215,7 +226,7 @@ def main():
                              assets_root=args.assets_root, keyframes=args.keyframes, audio=args.audio,
                              continuous=args.continuous, auto_scenes=automatic or args.auto_scenes,
                              alignment=args.alignment,
-                             reference_text=reference)
+                             reference_text=reference, workers=args.workers)
     print(json.dumps({"encoder": encoder, **asdict(report)}, indent=2))
 
 

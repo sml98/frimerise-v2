@@ -7,6 +7,7 @@ from bisect import bisect_left
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from functools import lru_cache
+from itertools import accumulate
 from math import ceil, floor, isfinite
 from pathlib import Path
 
@@ -16,6 +17,14 @@ from .text_utils import word_key
 
 DANGLING = frozenset("a o as os de do da dos das em e um uma uns umas no na nos nas por para com ao aos que mas".split())
 SENTENCE_END = ".!?…"
+NAME_PARTICLES = frozenset("da das de do dos del van von e".split())
+NUMBER_WORDS = frozenset(
+    "zero um uma dois duas tres quatro cinco seis sete oito nove dez onze doze treze catorze quatorze quinze "
+    "dezesseis dezasseis dezessete dezassete dezoito dezenove dezanove vinte trinta quarenta cinquenta "
+    "sessenta setenta oitenta noventa cem cento duzentos duzentas trezentos trezentas quatrocentos "
+    "quatrocentas quinhentos quinhentas seiscentos seiscentas setecentos setecentas oitocentos oitocentas "
+    "novecentos novecentas mil milhao milhoes bilhao bilhoes trilhao trilhoes".split()
+)
 
 
 @lru_cache(maxsize=2)
@@ -132,7 +141,7 @@ def _boundaries(words, fps, frame_count):
         if first <= last:
             frame = (first + last) // 2
             candidate = Boundary(frame, index, following.start_sec - prior_end,
-                                 previous.text.rstrip('”’"\')]').endswith(tuple(SENTENCE_END)))
+                                 _ends_sentence(previous.text))
             if candidates and frame == candidates[-1].frame:
                 candidates[-1] = candidate
             else:
@@ -159,12 +168,38 @@ def _script_targets(scenes, words):
         yield anchors[a] + (anchors[b] - anchors[a]) * (end - a) / (b - a)
 
 
-def _script_cuts(scenes, words, candidates, frame_count):
+def _authored_cuts(scenes, words, candidates, frame_count, fps):
+    groups = [scene.narration.split() for scene in scenes]
+    if [word.text for word in words] != [token for group in groups for token in group]:
+        return None
+    exact = {cut.word_index: cut for cut in candidates}
+    cuts = []
+    for index, offset in enumerate(list(accumulate(map(len, groups)))[:-1]):
+        candidate = exact.get(offset)
+        if not candidate:
+            # A script boundary can fall between two presentation frames. Keep the
+            # written words on their own sides and move only the visual cut.
+            at = words[offset].start_sec
+            frame = floor(at * fps + 1e-8)
+            candidate = Boundary(frame, offset, sentence=_ends_sentence(words[offset - 1].text))
+        low = cuts[-1].frame + 1 if cuts else 1
+        high = frame_count - (len(scenes) - index - 1)
+        cuts.append(replace(candidate, frame=max(low, min(high, candidate.frame))))
+    return cuts
+
+
+def _script_cuts(scenes, words, candidates, frame_count, fps):
     count = len(scenes) - 1
+    if frame_count < len(scenes):
+        raise ValueError("A faixa é curta demais para o número de cenas.")
     if not words:
-        if frame_count < len(scenes):
-            raise ValueError("A faixa é curta demais para o número de cenas.")
         return [Boundary(i * frame_count // len(scenes), 0) for i in range(1, len(scenes))]
+    exact = _authored_cuts(scenes, words, candidates, frame_count, fps)
+    if exact is not None:
+        return exact
+    after_sentences = [cut for cut in candidates if cut.sentence]
+    if len(after_sentences) >= count:
+        candidates = after_sentences
     if len(candidates) < count:
         raise ValueError("A faixa não tem fronteiras seguras suficientes para as cenas do roteiro.")
     cuts = []
@@ -208,33 +243,53 @@ def _automatic_cuts(candidates, frame_count, fps, has_words):
     return cuts
 
 
+def _ends_sentence(token):
+    return token.rstrip('”’"\')]').endswith(tuple(SENTENCE_END))
+
+
+def _protected_breaks(words):
+    tokens = [word.text.strip('“”‘’"\'()[]') for word in words]
+    keys = [word_key(token) for token in tokens]
+    capitals = [bool(token) and token[0].isupper() for token in tokens]
+    numeric = [key in NUMBER_WORDS or key.isdecimal() for key in keys]
+    protected = set()
+    for index in range(len(tokens) - 1):
+        if tokens[index].endswith(tuple(".,:;!?…")):
+            continue
+        if (capitals[index] and capitals[index + 1]) or (numeric[index] and numeric[index + 1]):
+            protected.add(index + 1)
+        if index + 2 < len(tokens) and not tokens[index + 1].endswith(tuple(".,:;!?…")):
+            if ((capitals[index] and keys[index + 1] in NAME_PARTICLES and capitals[index + 2])
+                    or (numeric[index] and keys[index + 1] == "e" and numeric[index + 2])):
+                protected.update((index + 1, index + 2))
+    return protected
+
+
 def caption_blocks(words):
-    """Keep the aligned tokens and avoid splitting immediately after a connector."""
+    """Wrap complete phrases without orphaning words or breaking names and numbers."""
+    if not words:
+        return ()
+    protected = _protected_breaks(words)
+    clear = [index for index in range(1, len(words))
+             if index not in protected and word_key(words[index - 1].text) not in DANGLING
+             and words[index].start_sec >= words[index - 1].end_sec - 1e-8]
+    sentences = [0]
+    for index in clear:
+        if index - sentences[-1] >= 2 and len(words) - index >= 2 and (
+            _ends_sentence(words[index - 1].text) or words[index].start_sec - words[index - 1].end_sec >= .55
+        ):
+            sentences.append(index)
+    sentences.append(len(words))
+    widths = [0, *accumulate(len(word.text) + 1 for word in words)]
     blocks = []
-    start = 0
-    while start < len(words):
-        end = start + 1
-        last_break = None
-        length = 0
-        while end <= len(words):
-            word = words[end - 1]
-            length += len(word.text) + (end > start + 1)
-            if last_break is not None and (length > 44 or end - start > 8):
-                break
-            clear = end == len(words) or words[end].start_sec >= word.end_sec - 1e-8
-            if clear and word_key(word.text) not in DANGLING:
-                last_break = end
-                if end == len(words) or word.text.endswith(tuple(SENTENCE_END)) or (
-                    end < len(words) and words[end].start_sec - word.end_sec >= .55
-                ):
-                    break
-            end += 1
-        end = last_break or min(end, len(words))
-        if (len(words) - end <= 2 and end < len(words)
-                and words[end].start_sec - words[end - 1].end_sec < .32):
-            end = len(words)
-        blocks.append(CaptionBlock(tuple(words[start:end])))
-        start = end
+    for start, finish in zip(sentences, sentences[1:]):
+        internal = clear[bisect_left(clear, start + 2):bisect_left(clear, finish - 1)]
+        while start < finish:
+            legal = internal[bisect_left(internal, start + 2):] + [finish]
+            fits = [end for end in legal if end - start <= 8 and widths[end] - widths[start] <= 45]
+            end = fits[-1] if fits else legal[0]
+            blocks.append(CaptionBlock(tuple(words[start:end])))
+            start = end
     return tuple(blocks)
 
 
@@ -259,7 +314,7 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
     if len(caption_safe) >= (1 if auto_scenes else len(spec.scenes) - 1):
         candidates = caption_safe
     cuts = (_automatic_cuts(candidates, frame_count, spec.fps, bool(words)) if auto_scenes else
-            _script_cuts(spec.scenes, words, candidates, frame_count))
+            _script_cuts(spec.scenes, words, candidates, frame_count, spec.fps))
     edges = [Boundary(0, 0), *cuts, Boundary(frame_count, len(words))]
     scenes = []
     timeline = []
@@ -267,7 +322,9 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
         begin = start.frame / spec.fps
         first_sample = min(samples, round(start.frame * SAMPLE_RATE / spec.fps))
         last_sample = min(samples, round(end.frame * SAMPLE_RATE / spec.fps))
-        local = tuple(WordTiming(word.text, max(0.0, word.start_sec - begin), word.end_sec - begin)
+        scene_end = end.frame / spec.fps
+        local = tuple(WordTiming(word.text, max(0.0, min(scene_end, word.start_sec) - begin),
+                                 max(0.0, min(scene_end, word.end_sec) - begin))
                       for word in words[start.word_index:end.word_index])
         audio = AudioTrackSpec(wav, local, samples=last_sample - first_sample, start_sample=first_sample,
                                locale=spec.tts_locale)

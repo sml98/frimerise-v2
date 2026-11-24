@@ -118,6 +118,39 @@ def test_official_words_stay_ordered_through_split_and_missing_tokens():
     assert result[-1].end_sec == pytest.approx(1.2)
 
 
+def test_sentence_boundary_stays_on_script_when_no_frame_fits_the_pause(tmp_path, monkeypatch):
+    spec = EpisodeSpec("Teste", "fixture", width=160, height=90, fps=30, scenes=[
+        {"id": "a", "plugin": "fixture", "narration": "A rede cresceu."},
+        {"id": "b", "plugin": "fixture", "narration": "Em 1989, surgiu a Web."},
+    ])
+    audio = _tone(tmp_path / "external.wav", 2.075)
+    words = (
+        WordTiming("A", .1, .2), WordTiming("rede", .25, .4), WordTiming("cresceu.", .42, .712),
+        WordTiming("Em", .712, .81), WordTiming("1989,", .81, 1.10), WordTiming("surgiu", 1.3, 1.52),
+        WordTiming("a", 1.52, 1.62), WordTiming("Web.", 1.62, 1.9),
+    )
+    monkeypatch.setattr(audio_aligner, "transcribe_words", lambda *args, **kwargs: words)
+    _, (first, second) = audio_aligner.align_audio(spec, audio, tmp_path)
+    assert first.end_sec == second.start_sec == 21 / 30
+    assert tuple(word.text for word in first.audio.words) == ("A", "rede", "cresceu.")
+    assert tuple(word.text for word in second.audio.words[:2]) == ("Em", "1989,")
+    assert first.audio.words[-1].end_sec == first.duration_sec
+
+
+@pytest.mark.parametrize("text, protected", [
+    ("Foram instalados equipamentos modernos nos Estados Unidos.", "Estados Unidos."),
+    ("Dispositivos receberam informações e reuniram pacotes.", "reuniram pacotes."),
+    ("O servidor ligava pesquisadores da Universidade da Califórnia.", "Universidade da Califórnia."),
+    ("Em 2023 a proporção já passava de sessenta e nove por cento.", "sessenta e nove"),
+])
+def test_subtitle_balances_tails_and_keeps_compounds(text, protected):
+    words = tuple(WordTiming(token, i * .3, (i + 1) * .3) for i, token in enumerate(text.split()))
+    blocks = caption_blocks(words)
+    assert " ".join(block.text for block in blocks) == text
+    assert all(len(block.words) >= 2 for block in blocks)
+    assert any(protected in block.text for block in blocks)
+
+
 def test_automatic_ten_minute_timeline_prefers_natural_pauses():
     fps = 30
     candidates = [Boundary(at * fps, at * 2, .35 if at % 7 == 0 else .04, at % 7 == 0)

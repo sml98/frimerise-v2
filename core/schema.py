@@ -159,6 +159,9 @@ class SceneRender:
     frames: Iterable[bytes]
     effects: tuple[SoundEffect, ...] = ()
     punchline_at_sec: float | None = None
+    web: bool = field(default=False, kw_only=True)
+    frame_format: Literal["rgb24", "jpeg", "png"] = field(default="rgb24", kw_only=True)
+    background: Path | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
