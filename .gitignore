@@ -2,5 +2,13 @@
 __pycache__/
 .pytest_cache/
 frimerise.db*
+*.db
+*.db-*
+.env
+.env.*
+rclone.conf
+*.mp4
+.cache/
+.playwright/
 /exports/
 /assets/stickers/cache/
