@@ -86,6 +86,8 @@ def main():
     run(str(python), str(bootstrap), "-q", "--disable-pip-version-check")
     run(str(python), "-m", "pip", "install", "-q", "--disable-pip-version-check",
         "-r", str(repo / "requirements.txt"))
+    if any(scene.get("plugin") == "motion_editorial" for scene in spec.get("scenes", ())):
+        run(str(python), "-m", "playwright", "install", "--with-deps", "--only-shell", "chromium")
 
     artifacts = job / "artifacts"
     artifacts.mkdir()

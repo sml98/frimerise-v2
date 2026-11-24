@@ -59,7 +59,7 @@ def test_one_tts_take_and_frames_follow_audio_instead_of_scene_pauses(tmp_path, 
 
     monkeypatch.setitem(registry._plugins, ("tts", spec.tts_plugin), synthesize)
     monkeypatch.setitem(registry._plugins, ("style", spec.scenes[0].plugin), style)
-    monkeypatch.setattr(audio_aligner, "transcribe_words", lambda *args: _transcript())
+    monkeypatch.setattr(audio_aligner, "transcribe_words", lambda *args, **kwargs: _transcript())
     _, report = render(spec, tmp_path / "continuous.mp4", continuous=True, alignment=tmp_path / "alignment.json")
     assert calls == ["A água encheu o vaso. Depois a chuva passou."]
     assert report.duration_sec == 50 / 24
@@ -77,8 +77,12 @@ def test_one_tts_take_and_frames_follow_audio_instead_of_scene_pauses(tmp_path, 
 def test_external_audio_preserves_asr_words_and_has_no_fade_at_the_visual_cut(tmp_path, monkeypatch):
     spec = _episode()
     audio = _tone(tmp_path / "external.wav", 2.075)
-    monkeypatch.setattr(audio_aligner, "transcribe_words", lambda *args: _transcript())
-    spec, timeline = audio_aligner.align_audio(spec, audio, tmp_path)
+    def transcribe(*args, initial_prompt):
+        assert initial_prompt is None
+        return _transcript()
+
+    monkeypatch.setattr(audio_aligner, "transcribe_words", transcribe)
+    spec, timeline = audio_aligner.align_audio(spec, audio, tmp_path, reference_text="")
     assert timeline[0].caption_blocks[0].text == "A água enxou o vaso."
     _mix(spec, timeline, [SceneRender(()), SceneRender(())], tmp_path, tmp_path / "mix.wav")
     raw = tmp_path / "mix.pcm"
@@ -88,6 +92,30 @@ def test_external_audio_preserves_asr_words_and_has_no_fade_at_the_visual_cut(tm
     assert max(abs(value) for value in samples[:80]) < 1000
     assert max(abs(value) for value in samples[cut - 80:cut + 80]) > 4000
     assert len(samples) == 50 * (SAMPLE_RATE // 24)
+
+
+def test_external_audio_uses_official_spelling_and_whisper_intervals(tmp_path, monkeypatch):
+    spec = _episode()
+    audio = _tone(tmp_path / "external.wav", 2.075)
+
+    def transcribe(*args, initial_prompt):
+        assert initial_prompt == "A água encheu o vaso. Depois a chuva passou."
+        return _transcript()
+
+    monkeypatch.setattr(audio_aligner, "transcribe_words", transcribe)
+    _, timeline = audio_aligner.align_audio(spec, audio, tmp_path)
+    assert timeline[0].caption_blocks[0].text == "A água encheu o vaso."
+    heard = _transcript()[2]
+    assert timeline[0].audio.words[2] == WordTiming("encheu", heard.start_sec, heard.end_sec)
+
+
+def test_official_words_stay_ordered_through_split_and_missing_tokens():
+    heard = tuple(WordTiming(token, index * .2, (index + 1) * .2)
+                  for index, token in enumerate("O Masair O Hara viu caractérias.".split()))
+    result = audio_aligner._verified_words(heard, "O Masahiro Hara também viu caracteres.", 1.2)
+    assert " ".join(word.text for word in result) == "O Masahiro Hara também viu caracteres."
+    assert all(a.start_sec < a.end_sec <= b.start_sec for a, b in zip(result, result[1:]))
+    assert result[-1].end_sec == pytest.approx(1.2)
 
 
 def test_automatic_ten_minute_timeline_prefers_natural_pauses():
@@ -166,6 +194,8 @@ def test_whisper_retries_cpu_if_cuda_fails_while_iterating(monkeypatch):
     model.cache_clear = lambda: None
     monkeypatch.setattr(audio_aligner, "_whisper_model", model)
     monkeypatch.setattr(ctranslate2, "get_cuda_device_count", lambda: 1)
-    assert audio_aligner.transcribe_words(Path("source.wav"), "pt-BR") == (WordTiming("voz", .23, .52),)
+    assert audio_aligner.transcribe_words(Path("source.wav"), "pt-BR", initial_prompt="voz") == (
+        WordTiming("voz", .23, .52),)
     assert [device for device, _ in seen] == ["cuda", "cpu"]
     assert all(options["word_timestamps"] and options["language"] == "pt" for _, options in seen)
+    assert all(options["initial_prompt"] == "voz" for _, options in seen)

@@ -8,14 +8,15 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize(("remote_exit", "episode", "aspect", "gpu", "external"), [
-    (0, "episodes/example.json", "", "L4", False),
-    (17, "episodes/example.json", "", "L4", False),
-    (0, "examples/example.json", "16:9", "T4", False),
-    (0, "examples/example.json", "9:16", "L4", True),
+@pytest.mark.parametrize(("remote_exit", "episode", "aspect", "gpu", "mode"), [
+    (0, "episodes/example.json", "", "L4", "gemini"),
+    (17, "episodes/example.json", "", "L4", "gemini"),
+    (0, "examples/example.json", "16:9", "T4", "gemini"),
+    (0, "examples/example.json", "9:16", "L4", "external"),
+    (0, "examples/example.json", "9:16", "L4", "edge"),
 ])
 def test_shell_transfers_the_revision_and_preserves_failure_while_stopping(
-    tmp_path, remote_exit, episode, aspect, gpu, external,
+    tmp_path, remote_exit, episode, aspect, gpu, mode,
 ):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -63,17 +64,22 @@ elif args[0] == "ssh":
     assert command.strip().startswith("set -eu") and "exec python3 -u" in command
     with tarfile.open(fileobj=sys.stdin.buffer, mode="r|") as bundle:
         files = {entry.name: bundle.extractfile(entry).read() for entry in bundle if entry.isfile()}
-    external = os.environ["COLAB_TEST_EXTERNAL"] == "1"
-    narration = "audio-input" if external else "frimerise.db"
-    assert set(files) == {"repo.bundle", "runner.py", "rclone.conf", narration, "job.json"}
+    mode = os.environ["COLAB_TEST_MODE"]
+    expected = {"repo.bundle", "runner.py", "rclone.conf", "job.json"}
+    if mode != "edge":
+        expected.add("audio-input" if mode == "external" else "frimerise.db")
+    assert set(files) == expected
     assert files["repo.bundle"].startswith(b"# v")
     metadata = json.loads(files["job.json"])
     assert metadata["episode"] == os.environ["COLAB_TEST_EPISODE"]
     assert metadata["aspect"] == os.environ["COLAB_TEST_ASPECT"]
     assert metadata["gpu"] == os.environ["COLAB_TEST_GPU"]
-    assert metadata["audio"] == external
-    if external:
+    assert metadata["audio"] == (mode == "external")
+    if mode == "external":
         assert files["audio-input"] == b"external audio"
+    elif mode == "edge":
+        assert metadata["tts"] == "edge_kokoro_tts"
+        assert metadata["continuous"]
     else:
         with tempfile.TemporaryDirectory() as temporary:
             db = Path(temporary) / "frimerise.db"
@@ -90,10 +96,13 @@ else:
            "COLAB_CALL_LOG": str(log), "COLAB_REMOTE_EXIT": str(remote_exit), "FRIMERISE_DB": str(database),
            "RCLONE_CONFIG": str(config), "FRIMERISE_RCLONE_REMOTE": "gdrive", "FRIMERISE_COLAB_GPU": gpu,
            "COLAB_TEST_GPU": gpu, "COLAB_TEST_EPISODE": episode, "COLAB_TEST_ASPECT": aspect,
-           "COLAB_TEST_EXTERNAL": str(int(external))}
+           "COLAB_TEST_MODE": mode}
     args = ["--aspect", aspect] if aspect else []
-    if external:
+    if mode == "external":
         args.extend(("--audio", str(audio)))
+    elif mode == "edge":
+        args.extend(("--continuous", "--tts", "edge_kokoro_tts"))
+    if mode != "gemini":
         env["FRIMERISE_DB"] = str(tmp_path / "missing.db")
     result = subprocess.run([str(launcher), episode, *args], cwd=repo, env=env,
                             capture_output=True, text=True)

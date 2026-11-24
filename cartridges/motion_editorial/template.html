@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Motion Editorial</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="vendor/gsap.min.js"></script>
+  <script defer src="qr_symbol.js"></script>
+  <script defer src="scenes.js"></script>
+</head>
+<body>
+  <main>
+    <div class="environment" aria-hidden="true">
+      <div class="glow glow-amber"></div>
+      <div class="glow glow-emerald"></div>
+      <div class="grid-plane"></div>
+    </div>
+    <header class="heading">
+      <p id="kicker"></p>
+      <h1 id="headline"></h1>
+      <p id="kpi"></p>
+      <p id="subtitle"></p>
+    </header>
+    <section class="stage card" aria-label="Infográfico">
+      <div id="graphic" class="graphic"></div>
+      <div id="badge" class="badge"></div>
+    </section>
+    <div class="wipe" aria-hidden="true"></div>
+    <section class="captions" aria-label="Legenda">
+      <p id="caption"></p>
+    </section>
+  </main>
+</body>
+</html>

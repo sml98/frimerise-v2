@@ -122,14 +122,9 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
     with TemporaryDirectory(prefix=".frimerise-", dir=output.parent) as temporary:
         work = Path(temporary)
         if continuous:
-            if audio is not None:
-                source, provider_words = Path(audio).resolve(), ()
-            else:
-                speech = _takes(spec, work, continuous=True)[0]
-                source, provider_words = speech.path, speech.words
-                reference_text = " ".join(scene.narration for scene in spec.scenes)
+            source = Path(audio).resolve() if audio is not None else _takes(spec, work, continuous=True)[0].path
             spec, timeline = align_audio(spec, source, work, auto_scenes=auto_scenes,
-                                         reference_text=reference_text, provider_words=provider_words)
+                                         reference_text=reference_text)
         else:
             timeline = _prepare_audio(spec, work)
         styles = {name: get_plugin("style", name) for name in dict.fromkeys(scene.plugin for scene in spec.scenes)}
@@ -180,9 +175,8 @@ def audio_overrides(spec, args):
     return replace(spec, **updates) if updates else spec
 
 
-def _automatic_spec(args):
+def _automatic_spec(args, narration):
     episode = args.episode
-    narration = episode.read_text(encoding="utf-8").strip() if episode else ""
     title = (episode or args.audio).stem.replace("_", " ")
     style = args.style or "crayon_book"
     aspect = args.aspect or "16:9"
@@ -210,7 +204,10 @@ def main():
         parser.error("informe um episódio JSON, um roteiro TXT ou --audio")
     if automatic and args.audio is None and not args.continuous:
         parser.error("um roteiro TXT requer --audio ou --continuous")
-    spec = _automatic_spec(args) if automatic else EpisodeSpec.from_json(args.episode.read_bytes())
+    reference = (args.episode.read_text(encoding="utf-8").strip() if args.episode else "") if automatic else None
+    if automatic and args.audio is None and not reference:
+        parser.error("informe um roteiro TXT com narração")
+    spec = _automatic_spec(args, reference) if automatic else EpisodeSpec.from_json(args.episode.read_bytes())
     if not automatic and args.aspect:
         width, height = (1080, 1920) if args.aspect == "9:16" else (1920, 1080)
         spec = replace(spec, aspect_ratio=args.aspect, width=width, height=height)
@@ -218,7 +215,7 @@ def main():
                              assets_root=args.assets_root, keyframes=args.keyframes, audio=args.audio,
                              continuous=args.continuous, auto_scenes=automatic or args.auto_scenes,
                              alignment=args.alignment,
-                             reference_text=spec.scenes[0].narration if automatic and args.episode else None)
+                             reference_text=reference)
     print(json.dumps({"encoder": encoder, **asdict(report)}, indent=2))
 
 

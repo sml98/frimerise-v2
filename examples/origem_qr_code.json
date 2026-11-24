@@ -1,0 +1,89 @@
+{
+  "title": "A Origem do QR Code (1994)",
+  "niche_skill": "motion_editorial",
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "audio_mode": "continuous",
+  "tts_plugin": "edge_kokoro_tts",
+  "tts_locale": "pt-BR",
+  "voice_id": "pt-BR-FranciscaNeural",
+  "tts_fallback_plugin": null,
+  "speech_style": "Narração contínua em 3ª pessoa, ritmo ágil de curiosidade tecnológica/negócios.",
+  "scenes": [
+    {
+      "id": "1",
+      "plugin": "motion_editorial",
+      "kicker": "1994 · JAPÃO",
+      "headline": "O código que nasceu numa fábrica",
+      "kpi": "10 → 1",
+      "subtitle": "Uma leitura no lugar de dez.",
+      "narration": "O QR Code não foi criado para celulares. Em 1994, ele nasceu numa fábrica de autopeças no Japão para substituir códigos de barras lentos.",
+      "visual_type": "barcode_to_qr",
+      "metric_badge": "10 LEITURAS → 1",
+      "foley": [
+        "whoosh",
+        "click",
+        "pop"
+      ]
+    },
+    {
+      "id": "2",
+      "plugin": "motion_editorial",
+      "kicker": "INSPIRAÇÃO",
+      "headline": "O tabuleiro de Go",
+      "kpi": "360°",
+      "subtitle": "Três marcadores guiam a leitura em qualquer ângulo.",
+      "narration": "O engenheiro Masahiro Hara, da Denso Wave, se inspirou nas peças pretas e brancas do jogo de Go para criar uma grade lida em qualquer ângulo.",
+      "visual_type": "go_board_markers",
+      "metric_badge": "RAZÃO 1:1:3:1:1",
+      "foley": [
+        "whoosh",
+        "pop"
+      ]
+    },
+    {
+      "id": "3",
+      "plugin": "motion_editorial",
+      "kicker": "CAPACIDADE",
+      "headline": "De 20 para 7.089 dígitos",
+      "kpi": "354×",
+      "subtitle": "Mais dados por código.",
+      "narration": "Enquanto um código de barras comum guarda cerca de vinte caracteres, o QR Code suporta mais de sete mil dígitos e funciona mesmo com até trinta por cento danificado.",
+      "visual_type": "bar_comparison",
+      "bars": [
+        {
+          "label": "Código de barras",
+          "value": 20,
+          "display": "~20"
+        },
+        {
+          "label": "QR Code (1994)",
+          "value": 7089,
+          "display": "7.089"
+        }
+      ],
+      "metric_badge": "ATÉ 30% DANIFICADO",
+      "foley": [
+        "whoosh",
+        "pop"
+      ]
+    },
+    {
+      "id": "4",
+      "plugin": "motion_editorial",
+      "kicker": "A JOGADA MESTRA",
+      "headline": "Patente aberta ao mundo",
+      "kpi": "$0",
+      "subtitle": "Royalties zerados para o padrão aberto.",
+      "narration": "A Denso Wave patenteou a invenção, mas decidiu não cobrar royalties pelo padrão aberto — e foi isso que colocou o quadrado preto e branco no mundo inteiro.",
+      "visual_type": "open_patent_network",
+      "metric_badge": "ZERO ROYALTIES",
+      "foley": [
+        "whoosh",
+        "stamp_click"
+      ]
+    }
+  ]
+}

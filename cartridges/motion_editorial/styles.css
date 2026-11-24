@@ -1,0 +1,206 @@
+:root {
+  --ink: #0b0f17;
+  --card: #141b26;
+  --text: #f3f5f8;
+  --muted: #aebcca;
+  --amber: #f59e0b;
+  --green: #10b981;
+  --border: rgba(255, 255, 255, .10);
+  --mono: "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+body {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--text);
+  font-family: Arial, "Liberation Sans", sans-serif;
+}
+main { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; }
+h1, p { margin: 0; }
+
+.environment { position: absolute; inset: 0; overflow: hidden; }
+.glow { position: absolute; width: 104vmax; height: 104vmax; }
+.glow-amber {
+  top: -42vmax;
+  left: -45vmax;
+  background: radial-gradient(circle, #93602357, #62451b25 35%, transparent 68%);
+}
+.glow-emerald {
+  right: -44vmax;
+  bottom: -36vmax;
+  background: radial-gradient(circle, #19735b64, #14494033 38%, transparent 69%);
+}
+.grid-plane {
+  position: absolute;
+  inset: 15% -55% -100%;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .07) 1px, transparent 1px);
+  background-size: 5.5vmin 5.5vmin;
+  mask-image: linear-gradient(transparent, #000 44%, #000);
+  transform-origin: center top;
+}
+
+.heading {
+  position: absolute;
+  inset: 6.45% 7% auto;
+  height: 12%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1.05vmin;
+}
+#kicker {
+  display: flex;
+  align-items: center;
+  gap: .95vmin;
+  color: var(--amber);
+  font: 700 2.18vmin/1.12 var(--mono);
+  letter-spacing: .15em;
+}
+#kicker::before { content: ""; width: 2.5vmin; height: .28vmin; background: currentColor; }
+#headline {
+  font-size: 7.15vmin;
+  line-height: .96;
+  letter-spacing: -.052em;
+  font-weight: 800;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+#kpi, #subtitle { display: none; }
+
+.stage {
+  position: absolute;
+  inset: 20% 6.3% auto;
+  height: 49.45%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: 1.25vmin;
+  padding: 2.3vmin 2.4vmin 2.65vmin;
+  border: 1px solid var(--border);
+  border-radius: 2.4vmin;
+  background: linear-gradient(150deg, #ffffff0a, transparent 54%), var(--card);
+  box-shadow: 0 2.65vmin 10vmin #01030768, inset 0 1px #ffffff0c;
+  overflow: hidden;
+}
+.graphic { min-width: 0; min-height: 0; width: 100%; height: 100%; display: grid; place-items: center; }
+.graphic > svg { width: 100%; height: 100%; min-height: 0; display: block; }
+.badge {
+  min-height: 0;
+  max-width: 97%;
+  padding: .84vmin 1.38vmin;
+  border: 1px solid #f59e0b77;
+  border-radius: .65vmin;
+  color: var(--amber);
+  background: #332919;
+  font: 700 2.12vmin/1.05 var(--mono);
+  text-align: center;
+  letter-spacing: .035em;
+}
+.badge:empty { display: none; }
+
+.captions {
+  position: absolute;
+  z-index: 3;
+  inset: 74% 8% auto;
+  height: 9%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+#caption {
+  width: 100%;
+  max-width: 43ch;
+  font-weight: 700;
+  font-size: 4.6vmin;
+  line-height: 1.17;
+  letter-spacing: -.02em;
+  color: var(--text);
+  text-wrap: balance;
+  text-shadow: 0 .15vmin .7vmin #000b;
+}
+.spoken { color: #ffb83e; text-shadow: 0 0 .8vmin #ffb52a47; }
+
+.wipe {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  background: var(--ink);
+  box-shadow: inset .65vmin 0 #f59e0b88, inset -.65vmin 0 #10b98188;
+  pointer-events: none;
+}
+
+.comparison {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  justify-items: center;
+  align-items: center;
+  gap: 1.6vmin;
+  padding: .85vmin 2vmin 0;
+}
+.comparison-kpi {
+  white-space: nowrap;
+  color: var(--amber);
+  font-weight: 800;
+  font-size: 6.4vmin;
+  line-height: .98;
+  letter-spacing: -.053em;
+  text-align: center;
+}
+.comparison-kpi small { font: 700 1.95vmin/1 var(--mono); letter-spacing: .04em; vertical-align: .17em; }
+.bar-list { width: min(100%, 67vmin); display: grid; gap: 1.9vmin; }
+.comparison-row { display: grid; gap: .6vmin; min-width: 0; }
+.bar-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1vmin; }
+.bar-label { color: var(--muted); font-weight: 700; font-size: 2.36vmin; }
+.bar-value { color: var(--text); font: 700 3.35vmin/1 var(--mono); font-variant-numeric: tabular-nums; }
+.bar-track { height: .98vmin; border-radius: 100px; background: #2b3648; }
+.bar-fill { height: 100%; min-width: 3px; border-radius: inherit; transform-origin: left; background: var(--amber); }
+.comparison-row + .comparison-row .bar-fill { background: var(--green); }
+.damage-demo { width: 100%; height: 100%; min-height: 0; display: grid; place-items: center; }
+.damage-demo > svg { width: 100%; height: 100%; min-height: 0; display: block; }
+
+@media (orientation: landscape) {
+  .heading {
+    inset: 14% auto auto 4.8%;
+    width: 34.3%;
+    height: 51%;
+    gap: 1.8vmin;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+  #headline { font-size: 7.15vmin; text-wrap: wrap; }
+  #kicker { font-size: 2vmin; }
+  #kpi {
+    display: block;
+    color: var(--amber);
+    font-size: 12.1vmin;
+    font-weight: 800;
+    letter-spacing: -.075em;
+    line-height: .97;
+    font-variant-numeric: tabular-nums;
+  }
+  #kpi:empty, #subtitle:empty { display: none; }
+  #subtitle { display: block; color: var(--muted); font-size: 2.45vmin; line-height: 1.25; font-weight: 700; }
+  .stage { inset: 7% 4.05% auto 42%; height: 85%; padding: 2.65vmin; }
+  .badge { padding: .72vmin 1.4vmin; font-size: 1.85vmin; }
+  .captions {
+    inset: 76% auto auto 4.8%;
+    width: 32.7%;
+    height: 15%;
+    place-items: center start;
+    text-align: left;
+  }
+  #caption { max-width: 30ch; font-size: 3.45vmin; text-wrap: wrap; }
+  .comparison { grid-template-rows: auto minmax(0, 1fr); gap: 2vmin; padding-inline: 2.25vmin; }
+  .comparison-kpi { display: none; }
+  .bar-label { font-size: 2vmin; }
+  .bar-value { font-size: 2.95vmin; }
+  .grid-plane { inset: 0 -35% -160%; }
+}

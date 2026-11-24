@@ -34,7 +34,7 @@ Use a [skill Crayon Book](skills/crayon_book/SKILL.md) e os [presets](skills/cra
 FRIMERISE_DB=/caminho/frimerise.db ./render_colab.sh episodes/demo_crayon.json
 ```
 
-O script usa `colab` autenticado, uma base SQLite com `settings(key, value)` e uma chave `GEMINI_API_KEY`, e a configuração do rclone em `~/.config/rclone/rclone.conf`. Use `RCLONE_CONFIG` para outro caminho e `FRIMERISE_RCLONE_REMOTE` para escolher outro remote (padrão `gdrive`). Só a chave de TTS necessária é copiada da base para o job. As credenciais ficam fora do Git.
+O script usa `colab` autenticado e a configuração do rclone em `~/.config/rclone/rclone.conf`. Use `RCLONE_CONFIG` para outro caminho e `FRIMERISE_RCLONE_REMOTE` para escolher outro remote (padrão `gdrive`). Quando o episódio usa Gemini TTS, a base SQLite `settings(key, value)` fornece a `GEMINI_API_KEY`. O job recebe só essa entrada da base. As credenciais ficam fora do Git.
 
 A sessão `frime` importa a revisão comprometida de um Git bundle, verifica a L4 e exige `h264_nvenc`. Depois da auditoria técnica, o rclone publica e confere o MP4 e os três PNGs em `FrimeRise_Exports/<slug>/`. A sessão encerra ao final ou em caso de falha.
 
@@ -70,9 +70,13 @@ python -m core.engine transcricao.txt exports/episodio.mp4 --audio narracao.wav 
 
 Use `--audio` com um JSON para manter suas cenas, ou omita o JSON para buscar pausas e visar cenas de 5–9 s. O modo mantém a duração da faixa até o arredondamento de um quadro e desconsidera as pausas artificiais do roteiro. O fade de 30 ms atua nas pontas da faixa. O Whisper usa CUDA/FP16 quando disponível e CPU/INT8 como fallback. `FRIMERISE_WHISPER_MODEL` seleciona o modelo ou diretório local, com padrão `small`. [Faster Whisper](https://github.com/SYSTRAN/faster-whisper)
 
-As legendas de uma gravação sem transcrição usam as palavras reconhecidas pelo Whisper. Forneça um TXT literal para corrigir a grafia ou recuperar palavras omitidas com apoio do áudio. Na tomada de TTS, o roteiro original serve de referência. O Edge TTS tem um limite por requisição. Para textos maiores, use um provedor capaz de sintetizar o roteiro numa requisição ou envie a faixa pronta com `--audio`.
+Quando há roteiro em JSON ou TXT, o Whisper recebe o texto como prompt e fornece os tempos. As legendas usam a grafia e a pontuação do roteiro, inclusive com `--audio`. Na entrada apenas por áudio, as legendas usam as palavras reconhecidas. O Edge TTS tem um limite por requisição. Para textos maiores, use um provedor capaz de sintetizar o roteiro numa requisição ou envie a faixa pronta com `--audio`.
 
 Cada plugin recebe `SceneTiming.start_sec`, `end_sec`, `duration_sec`, `progress(t)` e `caption_blocks`. Os tempos das palavras e dos blocos são locais à cena no plugin e absolutos no JSON de alinhamento. Em modo contínuo, `audio.path` é compartilhado e `audio.start_sample` e `audio.samples` delimitam o trecho para análise.
+
+### Motion Editorial
+
+O terceiro cartucho usa Chromium headless e GSAP local para compor explicadores com gráficos em SVG e legendas por palavra. Instale o Chromium com `python -m playwright install --only-shell chromium`. No Colab, o runner instala o Chromium para episódios que usam esse cartucho. [Skill e comandos](cartridges/motion_editorial/SKILL.md) · [Exemplo do QR Code](examples/origem_qr_code.json)
 
 Informe o nome registrado do cartucho no campo `plugin` da cena. Os cartuchos e demais plugins são descobertos em pacotes Python sob `plugins/`.
 

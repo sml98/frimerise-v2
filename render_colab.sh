@@ -49,7 +49,6 @@ db=${FRIMERISE_DB:-frimerise.db}
 config=${RCLONE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/rclone/rclone.conf}
 remote=${FRIMERISE_RCLONE_REMOTE:-gdrive}
 gpu=${FRIMERISE_COLAB_GPU:-L4}
-[[ -n $audio || -s $db ]] || fail "Aponte FRIMERISE_DB para um frimerise.db preenchido."
 [[ -s $config ]] || fail "Configuração rclone inexistente: $config"
 [[ $remote =~ ^[[:alnum:]_.-]+$ ]] || fail "Nome de remote rclone inválido."
 [[ $gpu == L4 || $gpu == T4 ]] || fail "GPU inválida: $gpu"
@@ -71,7 +70,9 @@ from pathlib import Path
 
 source, stage, episode, remote, revision, aspect, gpu, audio, continuous, tts, voice = sys.argv[1:]
 stage = Path(stage)
-if not audio:
+spec = json.loads(Path(episode).read_text(encoding="utf-8"))
+backends = (tts or spec.get("tts_plugin", "gemini_tts"), spec.get("tts_fallback_plugin"))
+if not audio and "gemini_tts" in backends:
     try:
         with closing(sqlite3.connect(f"{Path(source).resolve().as_uri()}?mode=ro", uri=True)) as database:
             row = database.execute(
@@ -88,12 +89,13 @@ if not audio:
                                            "aspect": aspect, "gpu": gpu, "audio": bool(audio),
                                            "continuous": bool(continuous), "tts": tts, "voice": voice}))
 PY
+narration_files=()
 if [[ -n $audio ]]; then
     cp -- "$audio" "$stage/audio-input"
     chmod 600 "$stage/audio-input"
-    narration_file=audio-input
-else
-    narration_file=frimerise.db
+    narration_files=(audio-input)
+elif [[ -f $stage/frimerise.db ]]; then
+    narration_files=(frimerise.db)
 fi
 git bundle create "$stage/repo.bundle" HEAD
 git show HEAD:scripts/colab_render.py > "$stage/runner.py"
@@ -129,6 +131,6 @@ ssh-keygen -q -t ed25519 -N '' -f "$stage/colab-key"
         tar -xf - -C /content/frimerise-job
         exec python3 -u /content/frimerise-job/runner.py
     '
-    tar -C "$stage" -cf - repo.bundle job.json "$narration_file" rclone.conf runner.py |
+    tar -C "$stage" -cf - repo.bundle job.json "${narration_files[@]}" rclone.conf runner.py |
         colab ssh -s frime -i "$stage/colab-key" -- "$remote_job"
 )

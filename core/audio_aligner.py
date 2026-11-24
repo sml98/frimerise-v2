@@ -26,7 +26,7 @@ def _whisper_model(name, device):
                         cpu_threads=min(8, os.cpu_count() or 1) if device == "cpu" else 0)
 
 
-def transcribe_words(path, locale=None):
+def transcribe_words(path, locale=None, *, initial_prompt=None):
     import ctranslate2
 
     name = os.environ.get("FRIMERISE_WHISPER_MODEL", "small")
@@ -34,7 +34,7 @@ def transcribe_words(path, locale=None):
 
     def read(device):
         segments, _ = _whisper_model(name, device).transcribe(
-            str(path), language=language, word_timestamps=True, vad_filter=True,
+            str(path), language=language, word_timestamps=True, vad_filter=True, initial_prompt=initial_prompt,
         )
         # Iteration is part of the CUDA attempt. The generator loads libraries lazily.
         return tuple(WordTiming(word.word.strip(), word.start, word.end)
@@ -74,8 +74,8 @@ def _sanitize(words, duration):
     return tuple(sorted(clean, key=lambda word: word.start_sec))
 
 
-def _verified_words(words, text, duration, provider_words=()):
-    """Transfer authored spelling to recognized time anchors when the words are known."""
+def _verified_words(words, text, duration):
+    """Project the official tokens onto the monotonically ordered Whisper timestamps."""
     expected = text.split()
     if not words:
         raise ValueError("O roteiro foi fornecido, mas o Whisper não encontrou fala na faixa.")
@@ -83,37 +83,24 @@ def _verified_words(words, text, duration, provider_words=()):
     matcher = SequenceMatcher(a=keys, b=[word_key(word.text) for word in words], autojunk=False)
     if matcher.ratio() < .45:
         raise ValueError("A transcrição diverge demais do roteiro fornecido para alinhar as legendas com segurança.")
-    anchors = {}
-    if provider_words:
-        vendor = SequenceMatcher(a=keys, b=[word_key(word.text) for word in provider_words], autojunk=False)
-        for left, right, count in vendor.get_matching_blocks():
-            anchors.update((left + i, provider_words[right + i]) for i in range(count))
     output = []
-    for operation, a, b, left, right in matcher.get_opcodes():
-        if operation == "equal":
+    for _, a, b, left, right in matcher.get_opcodes():
+        if a == b:
+            continue
+        if b - a == right - left:
             output.extend(WordTiming(text, word.start_sec, word.end_sec)
                           for text, word in zip(expected[a:b], words[left:right], strict=True))
             continue
-        if a == b:
-            continue
         if left < right:
-            start, end = words[left].start_sec, words[right - 1].end_sec
+            start, end = words[left].start_sec, max(word.end_sec for word in words[left:right])
         else:
-            start = words[left - 1].end_sec if left else 0.0
-            end = words[left].start_sec if left < len(words) else duration
-        previous_end = output[-1].end_sec if output else 0.0
-        next_start = words[right].start_sec if right < len(words) else duration
-        if min(end, next_start) > max(start, previous_end):
-            start, end = max(start, previous_end), min(end, next_start)
-        if end <= start:
-            start = max(0.0, end - .045)
-        vendor_words = tuple(anchors.get(index) for index in range(a, b))
-        if (all(vendor_words) and start <= vendor_words[0].start_sec
-                and vendor_words[-1].end_sec <= end
-                and all(first.end_sec <= second.start_sec for first, second in zip(vendor_words, vendor_words[1:]))):
-            output.extend(WordTiming(token, word.start_sec, word.end_sec)
-                          for token, word in zip(expected[a:b], vendor_words, strict=True))
-            continue
+            # Bound an omitted token to its neighboring word timings. Borrow a short
+            # span from adjacent words when Whisper reported no inter-word pause.
+            left_end = words[left - 1].end_sec if left else words[0].start_sec
+            right_start = words[left].start_sec if left < len(words) else words[-1].end_sec
+            center = (left_end + right_start) / 2
+            radius = min(.11 * (b - a), max(.025, (right_start - left_end) / 2))
+            start, end = max(0.0, center - radius), min(duration, center + radius)
         weights = [max(1, len(keys[i])) for i in range(a, b)]
         total = sum(weights)
         offset = 0
@@ -122,6 +109,15 @@ def _verified_words(words, text, duration, provider_words=()):
             offset += weight
             t1 = start + (end - start) * offset / total
             output.append(WordTiming(expected[index], t0, t1))
+
+    # Timestamp overlaps can occur in Whisper output, especially around silence.
+    # Keep exact endpoints otherwise, and put neighboring tokens on the same boundary.
+    for index in range(1, len(output)):
+        previous, current = output[index - 1:index + 1]
+        if previous.end_sec > current.start_sec:
+            time = max(previous.start_sec, min(current.end_sec, (previous.end_sec + current.start_sec) / 2))
+            output[index - 1] = replace(previous, end_sec=time)
+            output[index] = replace(current, start_sec=time, end_sec=max(time, current.end_sec))
     return tuple(output)
 
 
@@ -213,7 +209,7 @@ def _automatic_cuts(candidates, frame_count, fps, has_words):
 
 
 def caption_blocks(words):
-    """Keep Whisper's exact text and avoid splitting immediately after a connector."""
+    """Keep the aligned tokens and avoid splitting immediately after a connector."""
     blocks = []
     start = 0
     while start < len(words):
@@ -242,7 +238,7 @@ def caption_blocks(words):
     return tuple(blocks)
 
 
-def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_text=None, provider_words=()):
+def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_text=None):
     """Decode once and give all scenes views over one PCM file, without joining speech clips."""
     wav = work / "continuous.wav"
     run_ffmpeg("-v", "error", "-i", str(source), "-map", "0:a:0", "-vn", "-ac", "2",
@@ -252,9 +248,11 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
     if samples == 0:
         raise ValueError("A faixa contínua está vazia.")
     duration = samples / SAMPLE_RATE
-    words = _sanitize(transcribe_words(wav, spec.tts_locale), duration)
+    if reference_text is None:
+        reference_text = " ".join(scene.narration for scene in spec.scenes)
+    words = _sanitize(transcribe_words(wav, spec.tts_locale, initial_prompt=reference_text or None), duration)
     if reference_text:
-        words = _verified_words(words, reference_text, duration, _sanitize(provider_words, duration))
+        words = _verified_words(words, reference_text, duration)
     frame_count = (samples * spec.fps + SAMPLE_RATE - 1) // SAMPLE_RATE
     candidates = _boundaries(words, spec.fps, frame_count)
     caption_safe = [cut for cut in candidates if word_key(words[cut.word_index - 1].text) not in DANGLING]
