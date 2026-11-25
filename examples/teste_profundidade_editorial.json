@@ -1,0 +1,30 @@
+{
+  "title": "A Guerra dos Emus em fotos",
+  "niche_skill": "motion_editorial",
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "audio_mode": "continuous",
+  "tts_plugin": "edge_kokoro_tts",
+  "tts_locale": "pt-BR",
+  "voice_id": "pt-BR-FranciscaNeural",
+  "tts_fallback_plugin": null,
+  "scenes": [
+    {
+      "id": "capa",
+      "plugin": "motion_editorial",
+      "module": "subject_depth_title",
+      "accent": "amber",
+      "lut": "editorial_teal_amber.cube",
+      "kicker": "AUSTRÁLIA OCIDENTAL · 1932",
+      "headline": "A GUERRA\nDOS EMUS",
+      "subtitle": "A fotografia que ficou nos arquivos de The Land",
+      "media_query": "File:Deceased emu during Emu War.jpg",
+      "media_source": "wikimedia",
+      "media_orientation": "vertical",
+      "data": {"focus": [0.52, 0.40]},
+      "narration": "Em novembro de 1932, um fotógrafo registrou um homem segurando um emu abatido."
+    }
+  ]
+}

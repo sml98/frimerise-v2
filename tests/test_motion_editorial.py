@@ -105,7 +105,8 @@ def test_frame_zero_png_alpha_and_jpeg_mix_with_ffmpeg(tmp_path):
     assert Image.open(BytesIO(frames[1][0])).format == "JPEG"
     output = tmp_path / "mixed.mp4"
     encode_scenes([timing, SceneTiming(source, 12, 12, 30)], [
-        SceneRender(frames[0], web=True, frame_format="png", background=background),
+        SceneRender(frames[0], web=True, frame_format="png", background=background,
+                    background_lut="editorial_teal_amber"),
         SceneRender(frames[1], web=True, frame_format="jpeg"),
     ], width=width, height=height, fps=30, output=output, workers=2)
     probe = subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams",

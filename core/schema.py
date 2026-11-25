@@ -164,6 +164,9 @@ class SceneRender:
     web: bool = field(default=False, kw_only=True)
     frame_format: Literal["rgb24", "jpeg", "png"] = field(default="rgb24", kw_only=True)
     background: Path | None = field(default=None, kw_only=True)
+    background_lut: str | None = field(default=None, kw_only=True)
+    matting_models: tuple[str, ...] = field(default=(), kw_only=True)
+    color_luts: tuple[str, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

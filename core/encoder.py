@@ -4,6 +4,8 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryFile
 
+from .color_grade import lut_filter
+
 FFMPEG = ["ffmpeg", "-hide_banner", "-nostdin"]
 
 
@@ -34,7 +36,7 @@ def select_encoder(width, height, fps):
 
 
 def encode_frames(frames, *, width, height, fps, frame_count, output, settings=None, chunk=False,
-                  frame_format="rgb24", background=None):
+                  frame_format="rgb24", background=None, background_lut=None):
     name, device, options = settings or select_encoder(width, height, fps)
     if chunk:
         options = [*options, "-threads", "3", "-bf", "0", "-video_track_timescale", str(fps),
@@ -51,11 +53,13 @@ def encode_frames(frames, *, width, height, fps, frame_count, output, settings=N
         if name == "h264_vaapi":
             options = options[:2] + options[4:]
         output_filter = "format=nv12,hwupload" if name == "h264_vaapi" else "format=yuv420p"
+        grading = (f"{lut_filter(background_lut)},format=yuv420p,eq=brightness=-0.13:contrast=1.04"
+                   if background_lut else "eq=brightness=-0.16:contrast=1.06:saturation=0.42,"
+                   "colorbalance=rs=-0.028:bs=0.030:bm=0.015")
         composition = (
             f"[1:v]fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},setsar=1,setpts=PTS-STARTPTS,format=yuv420p,"
-            "eq=brightness=-0.16:contrast=1.06:saturation=0.42,"
-            "colorbalance=rs=-0.028:bs=0.030:bm=0.015,vignette=PI/5[plate];"
+            f"{grading},vignette=PI/5[plate];"
             f"[0:v]format=rgba,setsar=1,setpts=PTS-STARTPTS[graphics];"
             f"[plate][graphics]overlay=shortest=1:format=auto,{output_filter}[composited]"
         )

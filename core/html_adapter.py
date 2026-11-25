@@ -115,7 +115,7 @@ def encode_scenes(timeline, renders, *, width, height, fps, output, workers=None
         timing, rendered, path = job
         return encode_frames(rendered.frames, width=width, height=height, fps=fps, frame_count=timing.frame_count,
                              output=path, settings=settings, chunk=True, frame_format=rendered.frame_format,
-                             background=rendered.background)
+                             background=rendered.background, background_lut=rendered.background_lut)
 
     with ThreadPoolExecutor(max_workers=min(workers, len(jobs)), thread_name_prefix="frimerise-web") as pool:
         futures = [pool.submit(copy_context().run, encode, job) for job in jobs if job[1].web]

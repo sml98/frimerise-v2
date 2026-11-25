@@ -1,11 +1,14 @@
 """Adapt the core speech timeline to the editorial web composition."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
 
 from core.audio_aligner import caption_blocks
+from core.color_grade import LutName, grade_photo, lut_name
+from core.cutout_matting import matting_model, remove_background
 from core.html_adapter import render_frames
 from core.media_fetcher import fetch_broll, fetch_image, media_credit
 from core.schema import CaptionBlock, SceneRender
@@ -58,11 +61,11 @@ class ModuleData(BaseModel):
 
 Module = Literal["kpi_hero", "bar_comparison", "line_chart", "timeline_steps", "split_vs",
                  "process_flow", "network_nodes", "checklist_reveal", "quote_callout", "news_headline",
-                 "photo_spotlight", "photo_split_kpi", "gauge_meter", "terminal_code"]
+                 "photo_spotlight", "photo_split_kpi", "gauge_meter", "terminal_code", "subject_depth_title"]
 
 ITEM_COUNTS = {"timeline_steps": (3, 5), "split_vs": (2, 2), "process_flow": (3, 5),
                "network_nodes": (4, 8), "checklist_reveal": (3, 5)}
-PHOTO_MODULES = {"photo_spotlight", "photo_split_kpi"}
+PHOTO_MODULES = {"photo_spotlight", "photo_split_kpi", "subject_depth_title"}
 
 
 class Options(BaseModel):
@@ -82,11 +85,17 @@ class Options(BaseModel):
     broll_source: Literal["auto", "pixabay", "pexels", "archive", "wikimedia"] = "auto"
     broll_start_sec: FiniteFloat = Field(default=0, ge=0)
     broll_duration_sec: FiniteFloat = Field(default=12, gt=0, le=60)
+    lut: LutName | None = None
     metric_badge: str = Field(default="", max_length=42)
     kpi: str = Field(default="", max_length=18)
     subtitle: str = Field(default="", max_length=110)
     bars: list[Bar] = Field(default_factory=list)
     foley: list[Cue] = Field(default_factory=lambda: ["whoosh"])
+
+    @field_validator("lut", mode="before")
+    @classmethod
+    def normalize_lut(cls, value):
+        return lut_name(value) if value is not None else None
 
     @model_validator(mode="after")
     def check_module(self):
@@ -106,6 +115,8 @@ class Options(BaseModel):
             raise ValueError("terminal_code requires one to eight lines of up to 90 characters")
         if self.module in PHOTO_MODULES and not all(0 <= axis <= 1 for axis in self.data.focus):
             raise ValueError("photo focus coordinates must be in [0, 1]")
+        if self.module == "subject_depth_title" and not self.media_query:
+            raise ValueError("subject_depth_title requires media_query")
         return self
 
 
@@ -131,7 +142,7 @@ def composition_payload(scene_id, options, timing, media=None):
     enter_at, exit_at = transition_times(timing)
     return {
         **options.model_dump(exclude={"foley", "media_query", "media_source", "media_orientation",
-                                      "broll_query", "broll_source", "broll_start_sec", "broll_duration_sec"}),
+                                      "broll_query", "broll_source", "broll_start_sec", "broll_duration_sec", "lut"}),
         "id": scene_id,
         "durationSec": timing.duration_sec,
         "transitionSec": transition_duration(timing),
@@ -147,40 +158,60 @@ def composition_payload(scene_id, options, timing, media=None):
     }
 
 
-def _media(options):
-    assets = {}
-    payload = {}
-    video = None
+@dataclass
+class EditorialMedia:
+    assets: dict = field(default_factory=dict)
+    payload: dict = field(default_factory=dict)
+    video: Path | None = None
+    video_lut: str | None = None
+    luts: tuple[str, ...] = ()
+    models: tuple[str, ...] = ()
+
+
+def prepare_media(options):
+    media = EditorialMedia()
+    depth = options.module == "subject_depth_title"
     video_modes = {"broll_video", "broll_dark"}
-    if options.bg_mode in video_modes:
+    if options.bg_mode in video_modes and not depth:
         query = options.broll_query or options.media_query
         source = options.broll_source if options.broll_query else options.media_source
-        video = fetch_broll(query, source, options.media_orientation, options.broll_duration_sec,
-                            start_sec=options.broll_start_sec)
-        if video:
-            payload["videoCredit"] = media_credit(video)
+        media.video = fetch_broll(query, source, options.media_orientation, options.broll_duration_sec,
+                                  start_sec=options.broll_start_sec)
+        if media.video:
+            media.payload["videoCredit"] = media_credit(media.video)
+            media.video_lut = options.lut or ("editorial_teal_amber" if options.bg_mode == "broll_video" else None)
     if options.media_query and (options.module in PHOTO_MODULES or (
-        options.bg_mode in video_modes | {"photo_duotone"} and not video
+        options.bg_mode in video_modes | {"photo_duotone"} and not media.video
     )):
         photo = fetch_image(options.media_query, options.media_source, options.media_orientation)
         if photo:
-            assets["photo.jpg"] = photo
-            payload.update(photo="/_media/photo.jpg", photoCredit=media_credit(photo))
-    return assets, payload, video
+            photo_lut = options.lut or ("editorial_teal_amber" if depth else "doc_clean_neutral")
+            media.assets["photo.png"] = grade_photo(photo, photo_lut)
+            media.payload.update(photo="/_media/photo.png", photoCredit=media_credit(photo))
+            media.luts = (photo_lut,)
+            if depth:
+                subject = remove_background(photo)
+                media.assets["subject.png"] = grade_photo(subject, photo_lut)
+                media.payload["subject"] = "/_media/subject.png"
+                media.models = (matting_model(subject),)
+    if media.video_lut and media.video_lut not in media.luts:
+        media.luts += (media.video_lut,)
+    return media
 
 
 def render_scene(spec, scene, timing, media):
     if timing.fps != 30 or spec.aspect_ratio not in {"9:16", "16:9"}:
         raise ValueError("motion_editorial uses 30 fps and 9:16 or 16:9")
     options = Options.model_validate(scene.options)
-    assets, media_payload, video = _media(options)
-    payload = composition_payload(scene.id, options, timing, media_payload)
-    if video:
+    resolved = prepare_media(options)
+    payload = composition_payload(scene.id, options, timing, resolved.payload)
+    if resolved.video:
         payload["bg_mode"] = "broll_video"
     elif options.bg_mode in {"broll_video", "broll_dark"}:
-        payload["bg_mode"] = "photo_duotone" if media_payload.get("photo") else "grid_glow"
-    frame_format = "png" if video else "jpeg"
+        payload["bg_mode"] = "photo_duotone" if resolved.payload.get("photo") else "grid_glow"
+    frame_format = "png" if resolved.video else "jpeg"
     frames = render_frames(TEMPLATE, width=spec.width, height=spec.height, timing=timing, payload=payload,
-                           locale=spec.tts_locale or "pt-BR", assets=assets, frame_format=frame_format)
+                           locale=spec.tts_locale or "pt-BR", assets=resolved.assets, frame_format=frame_format)
     return SceneRender(frames, effects(options.foley, options.module or options.visual_type, timing, options.overlay_fx), web=True,
-                       frame_format=frame_format, background=video)
+                       frame_format=frame_format, background=resolved.video, background_lut=resolved.video_lut,
+                       matting_models=resolved.models, color_luts=resolved.luts)

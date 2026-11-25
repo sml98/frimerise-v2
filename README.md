@@ -106,6 +106,17 @@ python -m plugins.qc.ffprobe_audit saida.mp4 --episode episodio.json --frames 81
 
 Cada cena recebe frames suficientes para cobrir a fala medida e `pause_after_sec`. A duração da cena é arredondada para cima até o próximo frame quando necessário. A faixa de voz e a trilha são alinhadas à duração resultante, a 48 kHz. A masterização verifica no AAC decodificado −14 LUFS com tolerância de ±0,3 LU e pico verdadeiro de até −1,0 dBTP.
 
+### Recortes fotográficos e LUTs
+
+Para usar os módulos de foto no Ubuntu, instale `python -m pip install -r requirements.txt -r requirements-matting-cpu.txt`. O CPU usa exclusivamente `birefnet-general-lite` em ONNX. No Colab, o launcher instala as dependências extras ao detectar cenas de recorte e usa o `ZhengPeng7/BiRefNet` em FP16 na L4. Os PNGs RGBA ficam em `.cache/cutouts/`, e os pesos de CPU em `.cache/models/`. O campo `license_commercial_safe` do relatório se refere aos pesos MIT do modelo. Confira separadamente a licença das fotos no arquivo `*_fontes.md`. [Confirmação do autor sobre a licença dos pesos](https://github.com/ZhengPeng7/BiRefNet/issues/316)
+
+A coleção `assets/luts/` inclui `editorial_teal_amber`, `vintage_paper_warm` e `doc_clean_neutral`. Gere as tabelas com `python -m core.color_grade`. O tratamento das fotos é cacheado, e o FFmpeg aplica a LUT do B-roll antes de compor o primeiro plano.
+
+```bash
+python -m core.engine examples/teste_colagem_revista.json exports/teste_colagem_revista.mp4 \
+  --continuous --bgm auto --audio-report exports/relatorio_passo2.json
+```
+
 ## Configuração de voz
 
 - O Gemini usa `GEMINI_API_KEY` ou `GOOGLE_API_KEY`. Também aceita, em modo somente leitura, `frimerise.db` com tabela `settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)` e entrada `GEMINI_API_KEY`. `FRIMERISE_DB` permite indicar outro caminho. O campo `speech_style` define a interpretação e `FRIMERISE_GEMINI_TTS_MODEL` seleciona o modelo. [Gemini TTS](https://aistudio.google.com/docs/speech-generation)

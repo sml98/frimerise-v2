@@ -101,9 +101,11 @@ if not audio and "gemini_tts" in backends:
     settings.append("GEMINI_API_KEY")
 for scene in spec.get("scenes", ()):
     options = {**scene.get("options", {}), **scene}
-    for prefix in ("media", "broll"):
-        query = options.get(f"{prefix}_query", "")
-        provider = options.get(f"{prefix}_source", "auto")
+    sources = [(options, "media"), (options, "broll")]
+    sources.extend((photo, "media") for photo in options.get("photos", ()) if isinstance(photo, dict))
+    for item, prefix in sources:
+        query = item.get(f"{prefix}_query", "")
+        provider = item.get(f"{prefix}_source", "auto")
         if query and not query.lower().startswith(("file:", "archive:")):
             if provider in ("auto", "pixabay"):
                 settings.append("PIXABAY_API_KEY")

@@ -1,0 +1,61 @@
+{
+  "title": "A Guerra dos Emus em fotos",
+  "niche_skill": "cutout_paper",
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "audio_mode": "continuous",
+  "tts_plugin": "edge_kokoro_tts",
+  "tts_locale": "pt-BR",
+  "voice_id": "pt-BR-FranciscaNeural",
+  "tts_fallback_plugin": null,
+  "scenes": [
+    {
+      "id": "foto",
+      "plugin": "cutout_paper",
+      "module": "photo_cutout",
+      "headline": "A Guerra\ndos Emus",
+      "label": "Austrália Ocidental",
+      "paper": "kraft",
+      "camera": "zoom_in_slow",
+      "stamp": "NOV. 1932",
+      "stamp_at_progress": 0.31,
+      "media_query": "File:Deceased emu during Emu War.jpg",
+      "media_source": "wikimedia",
+      "photo_label": "The Land · 25 nov. 1932",
+      "foley": ["paper_slide", "paper_pop", "stamp_hit"],
+      "narration": "Em novembro de 1932, um fotógrafo registrou um homem segurando um emu abatido. Naquele mês, agricultores do oeste australiano pediram ajuda para proteger as plantações."
+    },
+    {
+      "id": "jornal",
+      "plugin": "cutout_paper",
+      "module": "newspaper_clipping",
+      "headline": "A imprensa\nchega ao campo",
+      "label": "Fotografia de arquivo",
+      "paper": "newsprint",
+      "camera": "pan_right",
+      "media_query": "File:Australian soldiers resting during Emu War.jpg",
+      "media_source": "wikimedia",
+      "publication": "Caderno de arquivo",
+      "clipping_headline": "Uma guerra contra emus",
+      "clipping_text": "À beira da água, o fotógrafo registrou a pausa dos soldados.",
+      "highlight": "Oeste australiano",
+      "foley": ["paper_slide", "paper_rustle"],
+      "narration": "A imprensa acompanhou a operação. Numa das fotos, soldados descansam perto da água, com uma câmera refletida diante deles. O episódio ganhou o nome de Guerra dos Emus."
+    },
+    {
+      "id": "mapa",
+      "plugin": "cutout_paper",
+      "layout": "map",
+      "headline": "Os bandos\nse dispersam",
+      "label": "Reconstituição ilustrada",
+      "paper": "kraft",
+      "camera": "zoom_out_subtle",
+      "stamp": "DEZ. 1932",
+      "stamp_at_progress": 0.68,
+      "foley": ["paper_slide", "stamp_hit"],
+      "narration": "No campo, os bandos se dispersavam e voltavam às lavouras. A operação foi encerrada em dezembro, e a campanha entrou para a história australiana."
+    }
+  ]
+}

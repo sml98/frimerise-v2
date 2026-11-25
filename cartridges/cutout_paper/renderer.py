@@ -19,6 +19,7 @@ from plugins.styles.paint_captions import word_key, word_starts
 
 from . import assets_procedural as art
 from .foley import effects
+from .magazine import MagazineOptions, draw_magazine, prepare_magazine
 from .paper_fx import CAPTION, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, paper_card, stamp, tabletop, tape
 
 DRAW_FPS = 12
@@ -42,7 +43,7 @@ class ExternalCutout(BaseModel):
     rotation: Annotated[float, Field(ge=-180, le=180)] = 0
 
 
-class Options(BaseModel):
+class Options(MagazineOptions):
     layout: Literal["map", "field", "expedition", "routes", "portrait", "custom"] = "custom"
     paper: Literal["kraft", "newsprint"] = "kraft"
     headline: str = ""
@@ -490,11 +491,13 @@ def _portrait(stage, layers, t, step, duration):
                   angle=6, bounds=stage.action_inset)
 
 
-def _stage_frame(stage, options, old, external, step, duration, impact_step, pace=1):
+def _stage_frame(stage, options, old, external, step, duration, impact_step, pace=1, magazine=None):
     t = step / DRAW_FPS / pace
     action_step = int(step / pace)
     layers = tuple(layer.copy() for layer in old)
-    if options.layout == "map":
+    if magazine is not None:
+        draw_magazine(layers[1], magazine, options.module, min(1, step / DRAW_FPS / duration), step, _center_piece)
+    elif options.layout == "map":
         _intro(stage, layers, t, action_step)
     elif options.layout == "field":
         _field(stage, layers, t, action_step, step / DRAW_FPS / duration)
@@ -539,12 +542,13 @@ def _portrait_stamp(stage, text, beat, seed):
     return ink, (right - ink.width - ceil(stage.size[0] * .021), round((top + bottom - ink.height) / 2))
 
 
-def _frames(stage, spec, options, scene, timing, seed, external, impact):
+def _frames(stage, spec, options, scene, timing, seed, external, impact, magazine=None):
     w, h = stage.size
     old = (tabletop(stage.size, options.paper, seed), stage.blank(), stage.blank())
     # Cache the fixed scenery by scene. Dynamic cut-outs are composited once per drawing beat.
     old = tuple(layer.copy() for layer in old)
-    _pinned_background(stage, old, options.layout)
+    if magazine is None:
+        _pinned_background(stage, old, options.layout)
     if timing.continuous:
         captions = tuple((block.start_sec, *_caption_panel(stage, block.text)) for block in timing.caption_blocks)
     else:
@@ -557,7 +561,7 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact):
     for index in range(timing.frame_count):
         step = drawing_step(index, timing.fps)
         if step != prior:
-            layers = _stage_frame(stage, options, old, external, step, timing.duration_sec, hit_step, pace)
+            layers = _stage_frame(stage, options, old, external, step, timing.duration_sec, hit_step, pace, magazine)
             prior = step
         at = index / timing.fps
         camera = _camera(options.camera, at / pace, timing.duration_sec / pace, min(w, h))
@@ -607,5 +611,8 @@ def render_scene(spec, scene, timing, media):
         external.append((item, art.supplied(path, stage.width(item.width), path.stat().st_mtime_ns)))
     foley = effects(options.foley, timing, impact / timing.fps if impact is not None else None,
                     timing.authored_time(1, reference=REFERENCE_SECONDS))
-    return SceneRender(_frames(stage, spec, options, scene, timing, seed, external, impact), foley,
-                       impact / timing.fps if impact is not None else None)
+    magazine = prepare_magazine(stage, options, seed) if options.module else None
+    return SceneRender(_frames(stage, spec, options, scene, timing, seed, external, impact, magazine), foley,
+                       impact / timing.fps if impact is not None else None,
+                       matting_models=magazine.models if magazine else (),
+                       color_luts=(magazine.lut,) if magazine and magazine.lut else ())

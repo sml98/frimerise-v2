@@ -109,6 +109,10 @@ def main():
         bootstrap.write_bytes(download.read())
     run(str(python), str(bootstrap), "-q", "--disable-pip-version-check")
     requirements = ["-r", str(repo / "requirements.txt")]
+    matting_modules = {"photo_cutout", "newspaper_clipping", "collage_board", "subject_depth_title"}
+    if any(scene.get("module", scene.get("options", {}).get("module")) in matting_modules
+           for scene in spec.get("scenes", ())):
+        requirements.extend(("-r", str(repo / "requirements-matting-colab.txt")))
     if tts_backend == "voxcpm2_tts":
         requirements.extend(("-r", str(repo / "requirements-colab.txt")))
     elif tts_backend == "kokoro_tts":

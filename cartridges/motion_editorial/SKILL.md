@@ -24,6 +24,10 @@ Use `--bgm auto` para a cama procedural ou indique o caminho da trilha. O cartuc
 
 Combine `bg_mode` (`grid_glow`, `photo_duotone`, `broll_video`, `radial_dramatic`), `accent` (`amber`, `emerald`, `cyan`, `crimson`, `violet`), `module` e `overlay_fx` (`highlight_bar`, `stamp_badge`, `laser_scan`). Use `metric_badge` como texto do carimbo. Os episódios anteriores continuam aceitando `visual_type` e `broll_dark`.
 
+O FFmpeg prepara `broll_video` com `editorial_teal_amber.cube` antes de compor a tipografia e as legendas. Use `lut` para escolher outro preset. As fotos de gráficos usam `doc_clean_neutral` por padrão.
+
+`subject_depth_title` usa `media_query` para a foto de fundo e o recorte de primeiro plano. A tipografia usa `headline` entre as duas camadas. `data.focus` define a posição do enquadramento de 0 a 1 em cada eixo. A cena usa `editorial_teal_amber` por padrão. [Exemplo de abertura](../../examples/teste_profundidade_editorial.json)
+
 `media_query` recebe uma busca em linguagem natural ou o título exato `File:…` de um item da Wikimedia Commons. Use `media_source` como `auto`, `pixabay` ou `wikimedia`, e `media_orientation` como `horizontal` ou `vertical`. Quando uma busca falha, o cartucho usa o fundo padrão ou exibe uma indicação de imagem indisponível. [API de arquivos da Wikimedia](https://www.mediawiki.org/wiki/API:Imageinfo)
 
 Para vídeo, use `bg_mode: "broll_video"` e `broll_query`. Escolha `broll_source` entre `auto`, `pixabay`, `pexels`, `archive` e `wikimedia`. Uma busca `archive:identificador` fixa o filme. `broll_start_sec` e `broll_duration_sec` selecionam o trecho (padrão de 12 s). Pixabay e Pexels consultam `PIXABAY_API_KEY` e `PEXELS_API_KEY` no ambiente ou em `settings`. O Internet Archive usa itens com licença explícita de domínio público. O cache fica em `.cache/media/` e o render salva os créditos em `<nome>_fontes.md`. [API Pixabay](https://pixabay.com/api/docs/) · [API Pexels](https://www.pexels.com/api/documentation/) · [Uso do acervo Prelinger](https://archivesupport.zendesk.com/hc/en-us/articles/360004715031-Prelinger-Archive)
@@ -46,6 +50,7 @@ Use `--workers 2` com `python -m core.engine` ou `./render_colab.sh` para fixar 
 | `news_headline` | `data.source`, `headline`, `excerpt` e `highlight` literal do excerto |
 | `photo_spotlight` | `media_query`, `data.caption` e `focus` com coordenadas x e y de 0 a 1 |
 | `photo_split_kpi` | `media_query`, `data.caption`, `value`, `unit` e `context` |
+| `subject_depth_title` | `media_query`, `headline`, `subtitle` opcional, `data.focus` e `lut` |
 | `gauge_meter` | `data.value` de 0 a 100 e `data.context` |
 | `terminal_code` | `data.context` e `data.lines` com até oito linhas |
 

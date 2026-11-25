@@ -689,9 +689,46 @@ function terminal_code(_tl, _seconds, { data }) {
   };
 }
 
+function subject_depth_title(tl, seconds, payload) {
+  const root = document.querySelector(".depth-cover");
+  const { photo, subject } = payload.media;
+  const [x, y] = payload.data.focus;
+  root.style.setProperty("--frame-focus", `${x * 100}% ${y * 100}%`);
+  if (photo) {
+    const plate = document.createElement("img");
+    plate.className = "depth-photo";
+    plate.alt = "";
+    plate.src = photo;
+    root.append(plate);
+    tl.fromTo(plate, { scale: 1 }, { scale: 1.035, duration: seconds, ease: "none" }, 0);
+  }
+  div("depth-veil", root);
+  const titleBox = div("depth-title-box", root);
+  const title = document.createElement("h1");
+  title.textContent = payload.headline;
+  titleBox.append(title);
+  fit(title, titleBox.clientHeight);
+  tl.fromTo(title, { yPercent: 13, scale: .94 }, {
+    yPercent: 0, scale: 1, duration: Math.min(.84, seconds * .27), ease: "power3.out",
+  }, 0);
+  if (subject) {
+    const cutout = document.createElement("img");
+    cutout.className = "depth-subject";
+    cutout.alt = "";
+    cutout.src = subject;
+    root.append(cutout);
+    tl.fromTo(cutout, { scale: 1.005 }, { scale: 1.057, duration: seconds, ease: "none" }, 0);
+  }
+  div("depth-tail", root);
+  div("depth-kicker", root, payload.kicker);
+  if (payload.subtitle) div("depth-subtitle", root, payload.subtitle);
+  const credit = document.querySelector(".background-credit");
+  credit.textContent = creditText(payload.media.photoCredit);
+}
+
 const modules = { kpi_hero, bar_comparison: generic_bars, line_chart, timeline_steps, split_vs,
   process_flow, network_nodes, checklist_reveal, quote_callout, news_headline,
-  photo_spotlight, photo_split_kpi, gauge_meter, terminal_code };
+  photo_spotlight, photo_split_kpi, gauge_meter, terminal_code, subject_depth_title };
 
 function setupBackground(payload) {
   const plate = document.querySelector(".backdrop");
@@ -742,6 +779,8 @@ let composition;
 async function setup(payload) {
   composition?.timeline.kill();
   graphic.replaceChildren();
+  document.querySelector(".depth-cover").replaceChildren();
+  document.body.dataset.layout = payload.module === "subject_depth_title" ? "depth" : "standard";
   setupBackground(payload);
   kicker.textContent = payload.kicker;
   heading.textContent = payload.headline;

@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 
 from .audio_aligner import align_audio
 from .audio_master import attach_beats, prepare_music, prepare_voice, probe_duration
+from .cutout_matting import APPROVED_MODELS
 from .encoder import encode_frames, run_ffmpeg
 from .html_adapter import encode_scenes
 from .media_fetcher import capture_media_credits, write_media_credits
@@ -92,7 +93,19 @@ def _produce(spec, timeline, assets, services, directory, keyframes=None, worker
         timeline = [replace(timing, audio=replace(timing.audio, path=voice_paths[timing.audio.path]))
                     for timing in timeline]
     master(spec, timeline, renders, assets, video, final)
-    return final, encoder, audit(final, spec=spec, frame_count=count, keyframes=keyframes)
+    return final, encoder, audit(final, spec=spec, frame_count=count, keyframes=keyframes), renders
+
+
+def _picture_audit(renders, timeline):
+    models = sorted({model for scene in renders for model in scene.matting_models})
+    luts = sorted({lut for scene in renders for lut in scene.color_luts})
+    out = {"matting_models": models, "matting_model": models[0] if len(models) == 1 else None,
+           "matting_license": "MIT" if models and set(models) <= APPROVED_MODELS else None,
+           "license_commercial_safe": bool(models) and set(models) <= APPROVED_MODELS,
+           "lut_applied": bool(luts), "luts": luts}
+    if timeline[0].continuous:
+        out["orphan_caption_blocks"] = sum(len(block.words) == 1 for timing in timeline for block in timing.caption_blocks)
+    return out
 
 
 def _write_alignment(path, spec, timeline):
@@ -160,8 +173,8 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
         audit = get_plugin("qc", spec.qc_plugin)
         services = styles, media, master, audit
         plan = get_plugin("exports", spec.niche_skill, optional=True) if spec.export_shorts_clips else None
-        final, encoder, report = _produce(spec, timeline, assets_root, services, work / "main", keyframes, workers,
-                                          music=music, voice_paths=voices)
+        final, encoder, report, renders = _produce(spec, timeline, assets_root, services, work / "main", keyframes, workers,
+                                                   music=music, voice_paths=voices)
         exports = {output: final}
         for clip in plan(spec, timeline) if plan else ():
             if (not re.fullmatch(r"[a-z0-9_]+", clip.suffix)
@@ -175,8 +188,8 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
                               width=clip.width, height=clip.height, export_shorts_clips=False)
             offset = timeline[clip.first_scene].start_frame
             times = [replace(timing, start_frame=timing.start_frame - offset) for timing in timeline[span]]
-            exports[destination], _, _ = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}",
-                                                  workers=workers, music=music, voice_paths=voices)
+            exports[destination], _, _, _ = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}",
+                                                     workers=workers, music=music, voice_paths=voices)
         for destination, staged in exports.items():
             staged.replace(destination)
         if alignment:
@@ -194,6 +207,7 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
                 "audio_duration_sec": reference_duration, "video_duration_sec": report.duration_sec,
                 "beats_detected": len(beats), "beats_sec": beats, "bgm_ducking_applied": bool(music and spec.audio_plugin == "master_dsp"),
                 "pedalboard_applied": pedalboard, "denoise_applied": cleaned,
+                **_picture_audit(renders, timeline),
             }, indent=2) + "\n", encoding="utf-8")
         write_media_credits(output.with_name(f"{output.stem}_fontes.md"), credits)
     return encoder, report
@@ -210,7 +224,7 @@ def add_audio_arguments(parser):
     parser.add_argument("--voice-ref", type=Path, help="reference WAV for VoxCPM2")
     parser.add_argument("--denoise", action="store_true", help="clean narration when DeepFilterNet is installed")
     parser.add_argument("--bgm", help="music file or 'auto' for a procedural bed")
-    parser.add_argument("--audio-report", type=Path, help="write the studio audio audit and beat times")
+    parser.add_argument("--audio-report", type=Path, help="write studio audio, beats and media processing results")
     parser.add_argument("--alignment", type=Path, help="write scene, word and caption timestamps to JSON")
 
 
