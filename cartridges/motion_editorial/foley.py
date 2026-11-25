@@ -5,6 +5,7 @@ from typing import Literal
 
 import numpy as np
 
+from core.audio_master import safe_beat
 from core.schema import SAMPLE_RATE, SoundEffect
 
 Cue = Literal["whoosh", "click", "pop", "stamp_click"]
@@ -27,6 +28,18 @@ def transition_duration(timing):
     return min(CUES["whoosh"][0], timing.duration_sec / 2)
 
 
+def transition_times(timing):
+    span = transition_duration(timing)
+    exit_start = timing.duration_sec - span
+    return (safe_beat(timing, 0.0, latest=span / 2),
+            safe_beat(timing, exit_start, earliest=span, latest=exit_start))
+
+
+def stamp_time(visual_type, timing, overlay=None):
+    fraction = .61 if overlay == "stamp_badge" else IMPACT.get((visual_type, "stamp_click"), (.5,))[0]
+    return safe_beat(timing, timing.duration_sec * fraction, latest=timing.duration_sec - 1 / timing.fps)
+
+
 def _pcm(name):
     duration, _ = CUES[name]
     t = np.arange(round(duration * SAMPLE_RATE)) / SAMPLE_RATE
@@ -45,7 +58,7 @@ def _pcm(name):
     return (np.clip(signal * envelope, -1, 1) * 28000).astype("<i2").tobytes()
 
 
-def effects(names, visual_type, timing):
+def effects(names, visual_type, timing, overlay=None):
     directory = timing.audio.path.parent / "motion-editorial-foley"
     output = []
     for name in dict.fromkeys(names):
@@ -56,8 +69,10 @@ def effects(names, visual_type, timing):
                 stream.setparams((1, 2, SAMPLE_RATE, 0, "NONE", "not compressed"))
                 stream.writeframes(_pcm(name))
         if name == "whoosh":
-            moments = (0.0, timing.duration_sec - transition_duration(timing))
+            moments = transition_times(timing)
+        elif name == "stamp_click":
+            moments = (stamp_time(visual_type, timing, overlay),)
         else:
             moments = tuple(timing.duration_sec * fraction for fraction in IMPACT.get((visual_type, name), (.5,)))
-        output.extend(SoundEffect(path, at, CUES[name][1]) for at in moments)
+        output.extend(SoundEffect(path, at, CUES[name][1]) for at in moments if at < timing.duration_sec)
     return tuple(output)

@@ -83,14 +83,14 @@ def _sanitize(words, duration):
     return tuple(sorted(clean, key=lambda word: word.start_sec))
 
 
-def _verified_words(words, text, duration):
+def _verified_words(words, text, duration, *, minimum_match=.45):
     """Project the official tokens onto the monotonically ordered Whisper timestamps."""
     expected = text.split()
     if not words:
         raise ValueError("O roteiro foi fornecido, mas o Whisper não encontrou fala na faixa.")
     keys = [word_key(token) for token in expected]
     matcher = SequenceMatcher(a=keys, b=[word_key(word.text) for word in words], autojunk=False)
-    if matcher.ratio() < .45:
+    if matcher.ratio() < minimum_match:
         raise ValueError("A transcrição diverge demais do roteiro fornecido para alinhar as legendas com segurança.")
     output = []
     for _, a, b, left, right in matcher.get_opcodes():
@@ -293,7 +293,7 @@ def caption_blocks(words):
     return tuple(blocks)
 
 
-def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_text=None):
+def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_text=None, spoken_text=None):
     """Decode once and give all scenes views over one PCM file, without joining speech clips."""
     wav = work / "continuous.wav"
     run_ffmpeg("-v", "error", "-i", str(source), "-map", "0:a:0", "-vn", "-ac", "2",
@@ -307,7 +307,13 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
         reference_text = " ".join(scene.narration for scene in spec.scenes)
     words = _sanitize(transcribe_words(wav, spec.tts_locale, initial_prompt=reference_text or None), duration)
     if reference_text:
-        words = _verified_words(words, reference_text, duration)
+        try:
+            words = _verified_words(words, reference_text, duration)
+        except ValueError:
+            if not spoken_text:
+                raise
+            spoken_words = _verified_words(words, spoken_text, duration)
+            words = _verified_words(spoken_words, reference_text, duration, minimum_match=0)
     frame_count = (samples * spec.fps + SAMPLE_RATE - 1) // SAMPLE_RATE
     candidates = _boundaries(words, spec.fps, frame_count)
     caption_safe = [cut for cut in candidates if word_key(words[cut.word_index - 1].text) not in DANGLING]

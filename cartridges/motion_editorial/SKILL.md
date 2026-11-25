@@ -18,6 +18,8 @@ python -m core.engine examples/origem_qr_code.json exports/origem_qr_code_horizo
 
 Use MP3 ou WAV com `--audio`. A voz define cortes e tempos das palavras. O roteiro fornece a grafia da legenda e a palavra falada fica em âmbar. Para a tomada de TTS em PT-BR, o exemplo usa a voz Francisca. Audite a duração, −14 LUFS e quadros do meio e do fim de cada cena. No formato vertical, mantenha o palco com cerca de 88% da largura e a legenda em 74–83% da altura. Em 16:9, preencha `kpi` e `subtitle` na coluna de texto e deixe a direita para o gráfico.
 
+Use `--bgm auto` para a cama procedural ou indique o caminho da trilha. O cartucho usa batidas a até 150 ms da marca original para sincronizar o carimbo e os wipes com o foley, quando a fala deixa uma pausa. `--audio-report <caminho.json>` registra os níveis do AAC, as batidas encontradas e a cadeia aplicada.
+
 ## Camadas e render paralelo
 
 Combine `bg_mode` (`grid_glow`, `photo_duotone`, `broll_video`, `radial_dramatic`), `accent` (`amber`, `emerald`, `cyan`, `crimson`, `violet`), `module` e `overlay_fx` (`highlight_bar`, `stamp_badge`, `laser_scan`). Use `metric_badge` como texto do carimbo. Os episódios anteriores continuam aceitando `visual_type` e `broll_dark`.

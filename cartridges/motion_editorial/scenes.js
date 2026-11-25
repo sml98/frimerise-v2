@@ -273,7 +273,7 @@ function bar_comparison(tl, seconds, payload) {
   };
 }
 
-function open_patent_network(tl, seconds) {
+function open_patent_network(tl, seconds, payload) {
   const t = (p) => p * seconds;
   const s = art();
   const points = [[113,135],[340,57],[567,135],[609,255],[567,375],[340,453],[113,375],[71,255]];
@@ -309,6 +309,7 @@ function open_patent_network(tl, seconds) {
   tl.fromTo(seal, { scale: .84 }, {
     scale: 1, transformOrigin: "center", duration: t(.23), ease: "back.out(1.65)",
   }, 0);
+  tl.to(seal, { scale: 1.045, duration: .075, repeat: 1, yoyo: true }, payload.stampAt ?? t(.14));
   tl.to(links.map(({ path }) => path), {
     attr: { "stroke-dashoffset": 0 }, duration: t(.17), stagger: t(.022), ease: "power2.out",
   }, t(.35));
@@ -336,7 +337,7 @@ function fit(element, limit) {
   }
 }
 
-function camera(tl, seconds, transition) {
+function camera(tl, seconds, transition, enterAt, exitAt) {
   const stage = document.querySelector(".stage");
   tl.fromTo(stage, { scale: 1, rotationX: 1.5, rotationY: -2, transformPerspective: 1200 }, {
     scale: 1.04, rotationX: -2, rotationY: 2.3, duration: seconds, ease: "none",
@@ -355,12 +356,12 @@ function camera(tl, seconds, transition) {
   }, 0);
   tl.fromTo(".wipe", { xPercent: -112, opacity: .78 }, {
     xPercent: 510, opacity: .2, duration: transition, ease: "power2.inOut",
-  }, 0);
+  }, enterAt);
   tl.fromTo(".wipe", { xPercent: -112, opacity: .2 }, {
     xPercent: 510, opacity: .85, duration: transition, ease: "power2.inOut", immediateRender: false,
-  }, seconds - transition);
+  }, exitAt);
   tl.fromTo(graphic, { scale: 1.07 }, { scale: 1, duration: transition, ease: "power3.out" }, 0);
-  tl.to(graphic, { scale: 1.055, duration: transition, ease: "power2.in" }, seconds - transition);
+  tl.to(graphic, { scale: 1.055, duration: transition, ease: "power2.in" }, exitAt);
   tl.fromTo([kicker, heading, kpi, subtitle], { x: -8 }, {
     x: 0, duration: transition, stagger: .018, ease: "power3.out",
   }, 0);
@@ -724,8 +725,9 @@ function applyOverlay(tl, seconds, payload) {
       duration: seconds * .48, ease: "none" }, seconds * .27);
     tl.to(fx, { opacity: 0, duration: seconds * .1 }, seconds * .73);
   } else {
+    const at = payload.overlay_fx === "stamp_badge" ? (payload.stampAt ?? seconds * .61) : seconds * .61;
     tl.fromTo(fx, { autoAlpha: 0, scale: .55, rotation: -7 }, { autoAlpha: 1, scale: 1, rotation: 0,
-      duration: seconds * .20, ease: "back.out(1.6)" }, seconds * .61);
+      duration: seconds * .20, ease: "back.out(1.6)" }, at);
   }
 }
 
@@ -755,7 +757,9 @@ async function setup(payload) {
     : payload.visual_type === "bar_comparison"
       ? badges.bar_comparison : badges[payload.visual_type] && (payload.metric_badge || badges[payload.visual_type]) || "";
   const timeline = gsap.timeline({ paused: true, defaults: { ease: "power2.out" } });
-  camera(timeline, payload.durationSec, payload.transitionSec ?? .28);
+  const transition = payload.transitionSec ?? .28;
+  camera(timeline, payload.durationSec, transition, payload.enterAt ?? 0,
+    payload.exitAt ?? payload.durationSec - transition);
   const build = payload.module ? modules[payload.module] : components[payload.visual_type];
   const beats = build(timeline, payload.durationSec, payload);
   applyOverlay(timeline, payload.durationSec, payload);

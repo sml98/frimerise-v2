@@ -74,6 +74,23 @@ Quando há roteiro em JSON ou TXT, o Whisper recebe o texto como prompt e fornec
 
 Cada plugin recebe `SceneTiming.start_sec`, `end_sec`, `duration_sec`, `progress(t)` e `caption_blocks`. Os tempos das palavras e dos blocos são locais à cena no plugin e absolutos no JSON de alinhamento. Em modo contínuo, `audio.path` é compartilhado e `audio.start_sample` e `audio.samples` delimitam o trecho para análise.
 
+### Áudio de estúdio
+
+```bash
+python -m core.engine examples/origem_qr_code.json exports/origem_qr_code_audio_studio.mp4 \
+  --continuous --tts-engine edge --bgm auto --audio-report exports/relatorio_audio.json
+
+python -m core.engine episodio.json exports/episodio.mp4 --audio narracao.wav \
+  --denoise --bgm trilha.mp3 --audio-report exports/relatorio_audio.json
+
+./render_colab.sh examples/origem_qr_code.json --continuous --tts-engine voxcpm2 \
+  --voice-ref referencia.wav --bgm auto
+```
+
+A voz passa por filtro de graves, equalização, compressão e limiter do Pedalboard, com filtros equivalentes do FFmpeg como fallback. `--bgm auto` gera uma cama instrumental procedural original. A trilha fica em −20 dB nas pausas e o sidechain usa a voz para reduzir seu ganho em até 12 dB adicionais durante a fala. O `librosa` detecta as batidas. Os cartuchos podem usar `SceneTiming.beats_sec` e `core.audio_master.safe_beat` para mover um carimbo ou wipe em até 150 ms, dentro de uma pausa entre palavras. Os cortes de cena e a legenda mantêm o alinhamento original.
+
+`--denoise` habilita o DeepFilterNet em 48 kHz quando houver o executável `deep-filter` no `PATH` ou o backend Python instalado. No Colab, o launcher tenta preparar o executável quando a opção é usada. Se estiver indisponível, a masterização segue com `denoise_applied: false` no relatório. O mix final tem fades de 30 ms e passa pela normalização em duas passagens do FFmpeg. [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)
+
 ### Motion Editorial
 
 O terceiro cartucho usa Chromium headless e GSAP local para compor explicadores com gráficos em SVG e legendas por palavra. Instale o Chromium com `python -m playwright install --only-shell chromium`. No Colab, o runner instala o Chromium para episódios que usam esse cartucho. [Skill e comandos](cartridges/motion_editorial/SKILL.md) · [Exemplo do QR Code](examples/origem_qr_code.json)
@@ -87,14 +104,17 @@ python -m plugins.qc.ffprobe_audit saida.mp4 --episode episodio.json --frames 81
 
 `--assets-root` define a base dos caminhos de mídia e da trilha. O padrão é o diretório de execução. Quando `media_plugin` é `local_pack`, o objeto `media` de cada cena mapeia nomes para arquivos. Em `--frames`, informe a contagem esperada para o MP4 que está auditando.
 
-Cada cena recebe frames suficientes para cobrir a fala medida e `pause_after_sec`. A duração da cena é arredondada para cima até o próximo frame quando necessário. A faixa de voz e a trilha são alinhadas à duração resultante, a 48 kHz. A auditoria mede o áudio AAC decodificado e aceita −14 LUFS com tolerância de ±0,5 LU e pico verdadeiro de até −1,0 dBTP.
+Cada cena recebe frames suficientes para cobrir a fala medida e `pause_after_sec`. A duração da cena é arredondada para cima até o próximo frame quando necessário. A faixa de voz e a trilha são alinhadas à duração resultante, a 48 kHz. A masterização verifica no AAC decodificado −14 LUFS com tolerância de ±0,3 LU e pico verdadeiro de até −1,0 dBTP.
 
 ## Configuração de voz
 
 - O Gemini usa `GEMINI_API_KEY` ou `GOOGLE_API_KEY`. Também aceita, em modo somente leitura, `frimerise.db` com tabela `settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)` e entrada `GEMINI_API_KEY`. `FRIMERISE_DB` permite indicar outro caminho. O campo `speech_style` define a interpretação e `FRIMERISE_GEMINI_TTS_MODEL` seleciona o modelo. [Gemini TTS](https://aistudio.google.com/docs/speech-generation)
 - `edge_kokoro_tts` usa Edge TTS com `pt-BR-AntonioNeural` por padrão. Para escolher um modelo Kokoro local, instale `kokoro` e eSpeak NG e use uma voz como `kokoro:pf_dora`. A mesma sintaxe vale em `fallback_voice_id`. [Vozes do Kokoro](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)
+- `--tts-engine edge` usa o motor leve. `--tts-engine kokoro --voice pf_dora` seleciona o Kokoro opcional. `--tts-engine voxcpm2` usa o modelo Apache-2.0 em CUDA e aceita `--voice-ref referencia.wav` para condicionar a voz. A saída do VoxCPM2 é de 48 kHz. O Colab instala `requirements-colab.txt` ao selecionar o motor. [VoxCPM2](https://github.com/OpenBMB/VoxCPM)
 - Quando o TTS não fornece tempos por palavra, o plugin Whisper os calcula a partir da fala gravada. `FRIMERISE_WHISPER_MODEL` seleciona o modelo ou o caminho local. O padrão é `small`. [Faster Whisper](https://github.com/SYSTRAN/faster-whisper)
 
 Defina `tts_locale: "pt-BR"` para exigir confirmação de localidade do provedor, inclusive no fallback. Nesse modo, o Edge TTS aceita `pt-BR-FranciscaNeural` e `pt-BR-AntonioNeural`. Para áudio pré-gravado, declare `locale` no objeto do manifesto junto à lista `recordings`. O campo `provider: "edge_tts"` também exige que `voice` seja uma das vozes nativas autorizadas.
+
+O mapa em `core/tts_pronunciation.py` adapta termos como `QR Code` e `ARPANET` somente no texto enviado ao sintetizador. O roteiro, os manifestos de voz gravada e a grafia das legendas são preservados.
 
 Se o provedor de voz falhar, `tts_fallback_plugin` aplica o fallback ao episódio inteiro para manter a voz consistente entre cenas. O padrão é `edge_kokoro_tts`. Use `null` para desativá-lo.

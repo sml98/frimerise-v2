@@ -1,0 +1,4 @@
+# Optional Python backend for 48 kHz cleanup. The standalone deep-filter binary also works.
+DeepFilterNet==0.5.6
+torch>=2.5,<2.6
+torchaudio>=2.5,<2.6

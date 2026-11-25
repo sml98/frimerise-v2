@@ -243,7 +243,7 @@ def test_dsp_mix_timing_and_levels(tmp_path, monkeypatch, ffmpeg_tools):
 
     monkeypatch.setitem(registry._plugins, ("tts", "test_audio_first"), synthesize)
     spec = episode(music_track="music.wav", scenes=[
-        {"id": "s1", "plugin": "test_style", "narration": "Primeira", "pause_after_sec": 0.5,
+        {"id": "s1", "plugin": "test_style", "narration": "Primeira", "pause_after_sec": 1.5,
          "cut_music_for_punchline": True},
     ])
     timeline = _prepare_audio(spec, tmp_path)
@@ -268,13 +268,15 @@ def test_dsp_mix_timing_and_levels(tmp_path, monkeypatch, ffmpeg_tools):
     def music_level(start):
         return max(abs(music_sample(start + index / SAMPLE_RATE)) for index in range(1200))
 
-    assert len(samples) == 2 * round(1.5 * SAMPLE_RATE)
+    assert len(samples) == 2 * round(2.5 * SAMPLE_RATE)
     assert voice(0) == 0 and abs(voice(0.99)) < abs(voice(0.5)) / 2
-    assert music_level(0.4) < music_level(1.45) / 2
+    lowered, recovering, resting = (music_level(at) for at in (0.4, 1.15, 2.4))
+    assert -14 <= 20 * math.log10(lowered / resting) <= -10
+    assert lowered < recovering < resting
     assert music_level(0.6) == 0
     assert music_sample(0.5525 - 1 / SAMPLE_RATE) != 0
     assert music_sample(0.5525) == 0
     assert music_sample(0.8525 - 1 / SAMPLE_RATE) == 0
     assert music_sample(0.8525) != 0
-    assert music_level(1.45) == pytest.approx(6400 * 10 ** (-24 / 20), abs=4)
+    assert resting == pytest.approx(6400 * 10 ** (-20 / 20), abs=4)
     assert voice(1.19) == 0 and voice(1.2) > 3000 and voice(1.25) == 0

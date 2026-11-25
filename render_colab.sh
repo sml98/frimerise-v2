@@ -4,25 +4,36 @@ umask 077
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
-[[ $# -ge 1 ]] || fail "Uso: $0 {episodes,examples}/<slug>.json [--aspect 9:16|16:9] [--audio arquivo | --continuous] [--workers N]"
+[[ $# -ge 1 ]] || fail "Uso: $0 {episodes,examples}/<slug>.json [--aspect 9:16|16:9] [--audio arquivo | --continuous] [--tts-engine edge|kokoro|voxcpm2] [--voice-ref arquivo.wav] [--bgm auto|arquivo] [--denoise] [--workers N]"
 episode=$1
 shift
 aspect=
 audio=
 continuous=
 tts=
+tts_engine=
 voice=
+voice_ref=
+bgm=
+denoise=
 workers=
 while (( $# )); do
     case $1 in
         --continuous) continuous=1; shift ;;
-        --aspect|--audio|--tts|--voice|--workers)
+        --denoise) denoise=1; shift ;;
+        --aspect|--audio|--tts|--tts-engine|--voice|--voice-ref|--bgm|--workers)
             [[ $# -ge 2 && -n $2 && $2 != --* ]] || fail "Faltou um valor para $1."
             case $1 in
                 --aspect) aspect=$2 ;;
                 --audio) audio=$(realpath -e -- "$2") || fail "Arquivo de áudio inexistente: $2" ;;
                 --tts) tts=$2 ;;
+                --tts-engine) tts_engine=$2 ;;
                 --voice) voice=$2 ;;
+                --voice-ref) voice_ref=$(realpath -e -- "$2") || fail "Referência de voz inexistente: $2" ;;
+                --bgm)
+                    if [[ $2 == auto ]]; then bgm=auto
+                    else bgm=$(realpath -e -- "$2") || fail "Trilha inexistente: $2"
+                    fi ;;
                 --workers) workers=$2 ;;
             esac
             shift 2
@@ -31,6 +42,11 @@ while (( $# )); do
     esac
 done
 [[ -z $audio || -z $continuous ]] || fail "Escolha --audio ou --continuous."
+[[ -z $tts || -z $tts_engine ]] || fail "Escolha --tts ou --tts-engine."
+[[ -z $tts_engine || $tts_engine == edge || $tts_engine == kokoro || $tts_engine == voxcpm2 ]] ||
+    fail "Motor de TTS inválido: $tts_engine"
+[[ -z $voice_ref || ( -f $voice_ref && -s $voice_ref && -z $audio ) ]] || fail "Informe um WAV de referência válido para o TTS."
+[[ -z $bgm || $bgm == auto || ( -f $bgm && -s $bgm ) ]] || fail "Informe um arquivo de trilha legível."
 [[ -z $workers || $workers =~ ^[1-9][0-9]*$ ]] || fail "Informe um inteiro positivo em --workers."
 [[ -z $audio || ( -f $audio && -s $audio ) ]] || fail "Informe um arquivo de áudio legível."
 [[ -z $aspect || $aspect == 9:16 || $aspect == 16:9 ]] || fail "Formato inválido: $aspect"
@@ -58,13 +74,13 @@ gpu=${FRIMERISE_COLAB_GPU:-L4}
 
 stage=$(mktemp -d)
 clean_stage() {
-    for file in frimerise.db audio-input rclone.conf job.json repo.bundle runner.py colab-key colab-key.pub; do
+    for file in frimerise.db audio-input voice-ref.wav bgm-input rclone.conf job.json repo.bundle runner.py colab-key colab-key.pub; do
         if [[ -f $stage/$file ]]; then unlink -- "$stage/$file"; fi
     done
     rmdir -- "$stage"
 }
 trap clean_stage EXIT
-python3 - "$db" "$stage" "$episode" "$remote" "$revision" "$aspect" "$gpu" "$audio" "$continuous" "$tts" "$voice" "$workers" <<'PY'
+python3 - "$db" "$stage" "$episode" "$remote" "$revision" "$aspect" "$gpu" "$audio" "$continuous" "$tts" "$voice" "$workers" "$tts_engine" "$voice_ref" "$bgm" "$denoise" <<'PY'
 import json
 import os
 import sqlite3
@@ -72,10 +88,14 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-source, stage, episode, remote, revision, aspect, gpu, audio, continuous, tts, voice, workers = sys.argv[1:]
+source, stage, episode, remote, revision, aspect, gpu, audio, continuous, tts, voice, workers, engine, voice_ref, bgm, denoise = sys.argv[1:]
 stage = Path(stage)
 spec = json.loads(Path(episode).read_text(encoding="utf-8"))
-backends = (tts or spec.get("tts_plugin", "gemini_tts"), spec.get("tts_fallback_plugin"))
+plugins = {"edge": "edge_kokoro_tts", "kokoro": "kokoro_tts", "voxcpm2": "voxcpm2_tts"}
+selected = plugins.get(engine) or tts or spec.get("tts_plugin", "gemini_tts")
+if voice_ref and selected != "voxcpm2_tts":
+    sys.exit("--voice-ref requer --tts-engine voxcpm2.")
+backends = (selected, spec.get("tts_fallback_plugin") if not engine else None)
 settings = []
 if not audio and "gemini_tts" in backends:
     settings.append("GEMINI_API_KEY")
@@ -113,6 +133,9 @@ if rows:
 (stage / "job.json").write_text(json.dumps({"episode": episode, "remote": remote, "revision": revision,
                                            "aspect": aspect, "gpu": gpu, "audio": bool(audio),
                                            "continuous": bool(continuous), "tts": tts, "voice": voice,
+                                           "tts-engine": engine, "tts_backend": selected,
+                                           "voice_ref": bool(voice_ref), "denoise": bool(denoise),
+                                           "bgm": "auto" if bgm == "auto" else "file" if bgm else "",
                                            "workers": int(workers) if workers else None}))
 PY
 narration_files=()
@@ -120,6 +143,14 @@ if [[ -n $audio ]]; then
     cp -- "$audio" "$stage/audio-input"
     chmod 600 "$stage/audio-input"
     narration_files=(audio-input)
+fi
+if [[ -n $voice_ref ]]; then
+    install -m 600 -- "$voice_ref" "$stage/voice-ref.wav"
+    narration_files+=(voice-ref.wav)
+fi
+if [[ -n $bgm && $bgm != auto ]]; then
+    install -m 600 -- "$bgm" "$stage/bgm-input"
+    narration_files+=(bgm-input)
 fi
 if [[ -f $stage/frimerise.db ]]; then
     narration_files+=(frimerise.db)

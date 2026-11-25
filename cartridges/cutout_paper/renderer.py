@@ -12,6 +12,7 @@ from zlib import crc32
 from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
+from core.audio_master import safe_beat
 from core.schema import SceneRender
 from core.text_utils import fit_text
 from plugins.styles.paint_captions import word_key, word_starts
@@ -61,7 +62,7 @@ def drawing_step(frame, fps):
 
 
 def impact_frame(seconds, fps, frame_count):
-    wanted = ceil(seconds * DRAW_FPS)
+    wanted = ceil(seconds * DRAW_FPS - 1e-9)
     limit = drawing_step(frame_count - 1, fps)
     return (min(wanted, limit) * fps + DRAW_FPS - 1) // DRAW_FPS
 
@@ -593,7 +594,11 @@ def render_scene(spec, scene, timing, media):
     scale = min(1, 960 / max(spec.width, spec.height))
     stage = Stage((max(96, round(spec.width * scale)), max(96, round(spec.height * scale))))
     seed = crc32(scene.id.encode())
-    impact = impact_frame(stamp_time(options, timing), timing.fps, timing.frame_count) if options.stamp else None
+    impact = None
+    if options.stamp:
+        original = stamp_time(options, timing)
+        at = safe_beat(timing, original, latest=(timing.frame_count - 1) / timing.fps, grid_fps=DRAW_FPS)
+        impact = impact_frame(at, timing.fps, timing.frame_count)
     external = []
     for item in options.cutouts:
         if item.asset not in media:

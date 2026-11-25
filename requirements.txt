@@ -7,4 +7,7 @@ faster-whisper>=1.2,<2
 # Released faster-whisper versions still pass metadata_errors to av.open.
 av<19
 playwright==1.65.2
+pedalboard>=0.9,<1
+librosa>=0.11,<0.12
+pyloudnorm>=0.1,<1
 pytest>=8,<10

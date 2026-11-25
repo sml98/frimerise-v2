@@ -106,6 +106,7 @@ class Speech:
     path: Path
     words: tuple[WordTiming, ...] = ()
     locale: str | None = field(default=None, kw_only=True)
+    spoken_text: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +127,7 @@ class SceneTiming:
     fps: int
     caption_blocks: tuple[CaptionBlock, ...] = ()
     continuous: bool = False
+    beats_sec: tuple[float, ...] = field(default=(), kw_only=True)
 
     @property
     def start_sec(self) -> float:

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
     (0, "examples/example.json", "16:9", "T4", "gemini"),
     (0, "examples/example.json", "9:16", "L4", "external"),
     (0, "examples/example.json", "9:16", "L4", "edge"),
+    (0, "examples/example.json", "9:16", "L4", "studio"),
 ])
 def test_shell_transfers_the_revision_and_preserves_failure_while_stopping(
     tmp_path, remote_exit, episode, aspect, gpu, mode,
@@ -66,8 +67,10 @@ elif args[0] == "ssh":
         files = {entry.name: bundle.extractfile(entry).read() for entry in bundle if entry.isfile()}
     mode = os.environ["COLAB_TEST_MODE"]
     expected = {"repo.bundle", "runner.py", "rclone.conf", "job.json"}
-    if mode != "edge":
+    if mode in {"gemini", "external"}:
         expected.add("audio-input" if mode == "external" else "frimerise.db")
+    elif mode == "studio":
+        expected.update(("voice-ref.wav", "bgm-input"))
     assert set(files) == expected
     assert files["repo.bundle"].startswith(b"# v")
     metadata = json.loads(files["job.json"])
@@ -81,6 +84,11 @@ elif args[0] == "ssh":
         assert metadata["tts"] == "edge_kokoro_tts"
         assert metadata["continuous"]
         assert metadata["workers"] == 3
+    elif mode == "studio":
+        assert metadata["tts-engine"] == "voxcpm2"
+        assert metadata["tts_backend"] == "voxcpm2_tts"
+        assert metadata["voice_ref"] and metadata["denoise"] and metadata["bgm"] == "file"
+        assert files["voice-ref.wav"] == files["bgm-input"] == b"external audio"
     else:
         with tempfile.TemporaryDirectory() as temporary:
             db = Path(temporary) / "frimerise.db"
@@ -103,6 +111,8 @@ else:
         args.extend(("--audio", str(audio)))
     elif mode == "edge":
         args.extend(("--continuous", "--tts", "edge_kokoro_tts", "--workers", "3"))
+    elif mode == "studio":
+        args.extend(("--tts-engine", "voxcpm2", "--voice-ref", str(audio), "--bgm", str(audio), "--denoise"))
     if mode != "gemini":
         env["FRIMERISE_DB"] = str(tmp_path / "missing.db")
     result = subprocess.run([str(launcher), episode, *args], cwd=repo, env=env,

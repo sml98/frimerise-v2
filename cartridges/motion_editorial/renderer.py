@@ -10,7 +10,7 @@ from core.html_adapter import render_frames
 from core.media_fetcher import fetch_broll, fetch_image, media_credit
 from core.schema import CaptionBlock, SceneRender
 
-from .foley import Cue, effects, transition_duration
+from .foley import Cue, effects, stamp_time, transition_duration, transition_times
 
 TEMPLATE = Path(__file__).with_name("template.html")
 
@@ -128,12 +128,16 @@ def editorial_captions(blocks):
 
 def composition_payload(scene_id, options, timing, media=None):
     blocks = editorial_captions(timing.caption_blocks or caption_blocks(timing.audio.words))
+    enter_at, exit_at = transition_times(timing)
     return {
         **options.model_dump(exclude={"foley", "media_query", "media_source", "media_orientation",
                                       "broll_query", "broll_source", "broll_start_sec", "broll_duration_sec"}),
         "id": scene_id,
         "durationSec": timing.duration_sec,
         "transitionSec": transition_duration(timing),
+        "enterAt": enter_at,
+        "exitAt": exit_at,
+        "stampAt": stamp_time(options.module or options.visual_type, timing, options.overlay_fx),
         "media": media or {},
         "captions": [{
             "start": block.start_sec,
@@ -178,5 +182,5 @@ def render_scene(spec, scene, timing, media):
     frame_format = "png" if video else "jpeg"
     frames = render_frames(TEMPLATE, width=spec.width, height=spec.height, timing=timing, payload=payload,
                            locale=spec.tts_locale or "pt-BR", assets=assets, frame_format=frame_format)
-    return SceneRender(frames, effects(options.foley, options.module or options.visual_type, timing), web=True,
+    return SceneRender(frames, effects(options.foley, options.module or options.visual_type, timing, options.overlay_fx), web=True,
                        frame_format=frame_format, background=video)
