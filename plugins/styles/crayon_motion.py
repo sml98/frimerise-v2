@@ -1,4 +1,4 @@
-"""Stepped picture-book poses, footfalls and flight."""
+"""Continuous picture-book footfalls, sway and flight."""
 
 from functools import lru_cache
 from math import cos, floor, pi, sin, tau
@@ -37,11 +37,11 @@ def walking_animal(index, phase):
     draw = ImageDraw.Draw(image)
     color, tall = (("#aa825f", True), ("#e7be8c", True), ("#b0a9af", False), ("#828596", False))[index]
     x, y = 50, 76
-    stride = (0, 11, 5, -8, -11, -6)[phase]
+    stride = 11 * sin(tau * phase / 6)
     for offset, direction in ((-22, 1), (-12, -1), (11, 1), (20, -1)):
         reach = direction * stride
-        lifted = 6 if reach > 4 else 0
-        art._stroke(draw, ((x + offset, y + 22), (x + offset + reach // 2, y + 38),
+        lifted = min(6.0, max(0.0, reach * .65))
+        art._stroke(draw, ((x + offset, y + 22), (x + offset + reach / 2, y + 38),
                           (x + offset + reach, y + 53 - lifted)), color, 7)
     draw.ellipse((x - 35, y - 6, x + 29, y + 34), fill=color, outline=art.INK, width=5)
     high = y - (49 if tall else 22)
@@ -56,7 +56,7 @@ def gait(at, duration, index):
     if not 0 < at < duration:
         return 0, 0.0
     phase = at * 1.65 + index * .22
-    return floor(phase * 6) % 6, abs(sin(tau * phase)) * (2.8 if index < 2 else 2.1)
+    return (phase * 6) % 6, abs(sin(tau * phase)) * (2.8 if index < 2 else 2.1)
 
 
 def flight_position(start, end, at, duration):
@@ -72,7 +72,9 @@ def wing_pose(image_bytes, size, phase):
     width, height = size
     shoulder = round(height * .59)
     # Leave the beak and tail anchored while the upper wing strokes fold toward the shoulder.
-    ratio = (.60, .80, 1.0, .86, .65, .52)[phase]
+    ratios = (.60, .80, 1.0, .86, .65, .52, .60)
+    index = floor(phase)
+    ratio = ratios[index] + (ratios[index + 1] - ratios[index]) * ease_in_out(phase - index)
     wing_height = max(1, round(shoulder * ratio))
     wing = image.crop((0, 0, width, shoulder)).resize((width, wing_height), Image.Resampling.BICUBIC)
     pose = Image.new("RGBA", size)

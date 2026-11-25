@@ -78,4 +78,5 @@ def test_magazine_modules_use_timed_paper_poses(tmp_path, monkeypatch, module, f
     assert rendered.matting_models == (cutout_matting.CPU_MODEL,)
     assert rendered.color_luts == ("vintage_paper_warm",)
     assert len(frames) == 30 and frames[0] != frames[-1]
-    assert frames[-2] == frames[-1]
+    # Frames 28 and 29 share the same 12 Hz texture sample. The rig still moves at 30 fps.
+    assert frames[-2] != frames[-1]

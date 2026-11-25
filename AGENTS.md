@@ -7,3 +7,10 @@
 - Antes de implementar um estilo novo, consulte a implementação mais próxima em `~/referencias/lemo-opuscar` ou `~/referencias/hyperframes`. Leia o código que entrega o efeito, o demo e sua licença antes de escrever a implementação.
 - Reaproveite componentes, curvas de câmera, técnicas de composição e efeitos sonoros do código de referência. Registre no projeto o arquivo de origem, a revisão e a licença de cada adaptação.
 - Use OpenMoji ou Twemoji para stickers. Os episódios narrados em português devem declarar `tts_locale: "pt-BR"` e usar vozes nativas ou gravações com a mesma localidade declarada.
+
+## Erros Proibidos (Lições Aprendidas)
+
+- Use somente checkpoints com licença comercial MIT ou Apache explicitamente aprovados em `core/cutout_matting.py`. `bria-rmbg` e `RMBG-2.0` são proibidos. Revise os créditos da própria mídia e deduplique palavras e nomes repetidos.
+- Em `subject_depth_title`, fundo e recorte compartilham enquadramento, escala, posição e animação em todos os fotogramas. Restrinja fita aos cantos de papéis retangulares e mantenha todo o bounding box das silhuetas livre.
+- Anime câmera, entradas, saídas e deslocamentos a 30 fps. Use `easeOutBack` nas entradas e `easeInOutCubic` na câmera. Reserve 12 Hz ao micro-boil de borda ou textura. Mostre conteúdo no primeiro quadro e distribua mudanças de composição a cada 2,5–3 s em cenas de mais de 5 s.
+- Termine cenas em `.`, `!` ou `?` e escreva blocos de legenda com pelo menos duas palavras. Valide o MP4 no `core/qc_gate.py` e revise o `qa_grid.png`. Entregue somente com zero janelas mortas, quadros pretos, congelamentos e silêncios detectados, −14 ±0,3 LUFS, pico verdadeiro ≤−1 dBTP e diferença de duração ≤0,15 s.

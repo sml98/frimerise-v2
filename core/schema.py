@@ -167,6 +167,7 @@ class SceneRender:
     background_lut: str | None = field(default=None, kw_only=True)
     matting_models: tuple[str, ...] = field(default=(), kw_only=True)
     color_luts: tuple[str, ...] = field(default=(), kw_only=True)
+    caption_texts: tuple[str, ...] | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

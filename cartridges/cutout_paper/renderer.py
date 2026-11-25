@@ -1,4 +1,4 @@
-"""Render paper rigs at 12 fps and an independent three-plane camera at output fps."""
+"""Render paper rigs and the three-plane camera at presentation fps."""
 
 import re
 from bisect import bisect_right
@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
 from core.audio_master import safe_beat
+from core.motion import camera_accents, ease_in_out_cubic, ease_out_back, visual_cues
 from core.schema import SceneRender
 from core.text_utils import fit_text
 from plugins.styles.paint_captions import word_key, word_starts
@@ -20,7 +21,7 @@ from plugins.styles.paint_captions import word_key, word_starts
 from . import assets_procedural as art
 from .foley import effects
 from .magazine import MagazineOptions, draw_magazine, prepare_magazine
-from .paper_fx import CAPTION, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, paper_card, stamp, tabletop, tape
+from .paper_fx import CAPTION, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, paper_card, stamp, tabletop
 
 DRAW_FPS = 12
 PARALLAX = (.30, 1.0, 1.20)
@@ -63,9 +64,7 @@ def drawing_step(frame, fps):
 
 
 def impact_frame(seconds, fps, frame_count):
-    wanted = ceil(seconds * DRAW_FPS - 1e-9)
-    limit = drawing_step(frame_count - 1, fps)
-    return (min(wanted, limit) * fps + DRAW_FPS - 1) // DRAW_FPS
+    return min(ceil(seconds * fps - 1e-9), frame_count - 1)
 
 
 def stamp_time(options, timing):
@@ -90,13 +89,11 @@ def camera_shake(index, impact, unit):
     return x * unit, y * unit
 
 
-def _ease(value):
-    u = max(0, min(1, value))
-    return u * u * (3 - 2 * u)
+_ease = ease_in_out_cubic
 
 
 def _pop(value):
-    return 1 + .12 * sin(11 * value) * max(0, 1 - value * 2) if value > 0 else 1.14
+    return .88 + .12 * ease_out_back(value / .32)
 
 
 def _camera(name, time, duration, unit):
@@ -270,7 +267,7 @@ def _caption_blocks(narration, replacements, width):
     tokens = _caption_tokens(narration, replacements)
     start = 0
     while start < len(tokens):
-        end = start + 1
+        end = min(start + 2, len(tokens))
         last_break = None
         while end <= len(tokens):
             group = [word for _, word in tokens[start:end]]
@@ -311,19 +308,12 @@ def _captions(stage, narration, audio, replacements=None):
         yield max(0, times[index][1] - .055), *_caption_panel(stage, group)
 
 
-def _tape_corners(stage, layer, center, width, height):
-    for x, y, angle in ((-.42, -.39, 25), (.41, .41, -25)):
-        piece = tape(max(13, round(width * .20)), angle, 15 if x < 0 else 19)
-        _center_piece(layer, piece, (center[0] + x * width, center[1] + y * height), bounds=stage.action_inset)
-
-
 def _set_map(stage, layer, x, y, fraction, at):
     width = stage.width(fraction)
-    center = stage.at(x - .13 * (1 - _ease(at / .57)), y)
+    center = stage.at(x - .13 * (1 - ease_out_back(at / .57)), y)
     image = art.australia(width)
     center, shrink = _center_piece(layer, image, center, angle=-5, bounds=stage.action_inset)
     width *= shrink
-    _tape_corners(stage, layer, center, width, width * .73)
     return center, width
 
 
@@ -341,7 +331,7 @@ def _intro(stage, layers, t, step):
     _, mid, fg = layers
     _set_map(stage, mid, .50 if stage.vertical else .38, .460 if stage.vertical else .415,
              .80 if stage.vertical else 1.00, t)
-    arrival = _ease((t - .20) / .41)
+    arrival = ease_out_back((t + .11) / .50)
     if arrival:
         hero = art.emu(stage.width(.59 if stage.vertical else .69), step % 42, "look")
         x, y = (.652, .478) if stage.vertical else (.595, .395)
@@ -376,7 +366,7 @@ def _field(stage, layers, t, step, progress):
 
 def _expedition(stage, layers, t, step):
     _, mid, fg = layers
-    move = _ease(t / .72)
+    move = ease_out_back(t / .72)
     truck = art.prop("truck", stage.width(.70 if stage.vertical else .91))
     _center_piece(mid, truck, stage.at(.55 + .47 * (1 - move), .389 if stage.vertical else .449),
                   angle=2 * sin(step * .64) * (1 - move), bounds=stage.action_inset)
@@ -384,26 +374,26 @@ def _expedition(stage, layers, t, step):
         elapsed = t - .076 * index
         if elapsed < 0:
             continue
-        enter = _ease(elapsed / .60)
+        enter = ease_out_back(elapsed / .60)
         soldier = art.soldier(stage.width(.145 if stage.vertical else .175), (step + 2 * index) % 12 if enter < 1 else
-                              (0, 1, 11, 0)[(step // 5 + index) % 4], officer=index == 0)
+                              .54 * sin(step * .42 + index), officer=index == 0)
         y = (.426 if stage.vertical else .423) + index * .022
         _center_piece(fg, soldier, stage.at(.195 + index * .127 - .38 * (1 - enter), y),
                       angle=-4 * (1 - enter), scale=_pop(elapsed), bounds=stage.action_inset)
     stand = art.prop("tripod", stage.width(.27 if stage.vertical else .33))
     shot = (step - 13) % 13 if step >= 13 else 12
-    recoil = (1.0, .55, .16)[shot] if shot < 3 else 0
+    recoil = 1 - _ease(shot / 3) if shot < 3 else 0
     x, y = (.643, .528) if stage.vertical else (.65, .49)
     _center_piece(fg, stand, stage.at(x + .24 * (1 - move) - .025 * recoil, y),
                   angle=5.5 * recoil, bounds=stage.action_inset)
     if shot < 7:
-        cloud = art.discharge(stage.width(.147 + .006 * shot), shot)
+        cloud = art.discharge(stage.width(.147 + .006 * shot), floor(shot))
         _center_piece(fg, cloud, stage.at(x + .16 + .006 * shot, y - .023 - .006 * shot),
                       angle=-8 + shot * 2, bounds=stage.action_inset)
     if step >= 3:
         age = step - 3
         fall = min(1, age / 6) ** 2
-        bounce = {7: .021, 8: .013, 9: 0, 10: .005}.get(age, 0)
+        bounce = .027 * abs(sin((age - 6) * tau / 5.2)) * max(0, 1 - (age - 6) / 5.6) if age > 6 else 0
         box = art.prop("box", stage.width(.19 if stage.vertical else .24))
         landing = .583 if stage.vertical else .52
         _center_piece(fg, box, stage.at(.44, landing - .185 * (1 - fall) - bounce),
@@ -458,7 +448,7 @@ def _routes(stage, layers, t, step):
             hop = abs(sin(step * .39 + index * 2))
             _center_piece(fg, bird, (x + (u - 1) * width * .15 + 3 * sin(step * .55), y - hop * 4),
                           bounds=stage.action_inset)
-    scout = art.soldier(stage.width(.11 if stage.vertical else .13), (step // 3) % 12, flip=True)
+    scout = art.soldier(stage.width(.11 if stage.vertical else .13), (step / 3) % 12, flip=True)
     _center_piece(fg, scout, (root[0] - stage.unit * .047, root[1] + stage.unit * .016),
                   angle=7 * sin(step * .3), bounds=stage.action_inset)
 
@@ -493,10 +483,11 @@ def _portrait(stage, layers, t, step, duration):
 
 def _stage_frame(stage, options, old, external, step, duration, impact_step, pace=1, magazine=None):
     t = step / DRAW_FPS / pace
-    action_step = int(step / pace)
+    at = step / DRAW_FPS
+    action_step = step / pace
     layers = tuple(layer.copy() for layer in old)
     if magazine is not None:
-        draw_magazine(layers[1], magazine, options.module, min(1, step / DRAW_FPS / duration), step, _center_piece)
+        draw_magazine(layers[1], magazine, options.module, at, duration, _center_piece)
     elif options.layout == "map":
         _intro(stage, layers, t, action_step)
     elif options.layout == "field":
@@ -514,7 +505,7 @@ def _stage_frame(stage, options, old, external, step, duration, impact_step, pac
     for item, image in external:
         elapsed = t - item.delay_sec
         if elapsed >= 0:
-            entry = -.12 * (1 - _ease(elapsed / .32)) if item.motion == "slide" else 0
+            entry = -.12 * (1 - ease_out_back(elapsed / .36)) if item.motion == "slide" else 0
             target = layers[("bg", "mid", "fg").index(item.layer)]
             _center_piece(target, image, stage.point(item.x + entry, item.y), angle=item.rotation,
                           scale=_pop(elapsed) if item.motion == "pop" else 1, bounds=stage.action_inset)
@@ -524,18 +515,32 @@ def _stage_frame(stage, options, old, external, step, duration, impact_step, pac
         paper = stamp(options.stamp, stage.width(.48 if big else .23), 39)
         stamp_x, stamp_y = (.282, .518) if options.layout == "map" else (.675, .532)
         _center_piece(fg, paper, stage.at(stamp_x, stamp_y), angle=7 - 2 * (1 - _ease(age / .26)), scale=_pop(age))
+    for index, cue in enumerate(visual_cues(duration)):
+        age = at - cue
+        if index % 3 == 1 and 0 <= age <= 1.3:
+            # Draw a brief editorial arrow beside the action while the secondary piece enters.
+            x, y = stage.at(.19, .586)
+            progress = ease_out_back(age / .50)
+            fade = 1 - _ease((age - .67) / .63)
+            tip = (x + stage.unit * .13 * progress, y - stage.unit * .033 * progress)
+            draw = ImageDraw.Draw(fg)
+            ink = (159, 53, 43, round(223 * fade))
+            draw.line((x, y, *tip), fill=ink, width=max(2, stage.unit // 104))
+            if progress > .72:
+                draw.line((tip[0] - stage.unit * .025, tip[1] - stage.unit * .019, *tip,
+                           tip[0] - stage.unit * .023, tip[1] + stage.unit * .027), fill=ink, width=max(2, stage.unit // 104))
     return layers
 
 
 @lru_cache(maxsize=28)
-def _portrait_stamp(stage, text, beat, seed):
+def _portrait_stamp(stage, text, frame_age, seed, fps=30):
     left, top, right, bottom = stage.band("stamp")
     room = bottom - top
     art_width = stage.width(.56 if len(text) > 6 else .264)
     ink = stamp(text, art_width, 39)
     if ink.height > room * .72:
         ink = _resized(ink, room * .72 / ink.height)
-    age = beat / DRAW_FPS
+    age = frame_age / fps
     lean = (1 if seed % 2 else -1) * (3.3 + 1.2 * (1 - _ease(age / .28)))
     ink = _resized(ink, _pop(age)).rotate(lean, Image.Resampling.BICUBIC, expand=True)
     ink, _ = _fit_piece(ink, right - left - 14, room)
@@ -545,7 +550,7 @@ def _portrait_stamp(stage, text, beat, seed):
 def _frames(stage, spec, options, scene, timing, seed, external, impact, magazine=None):
     w, h = stage.size
     old = (tabletop(stage.size, options.paper, seed), stage.blank(), stage.blank())
-    # Cache the fixed scenery by scene. Dynamic cut-outs are composited once per drawing beat.
+    # Keep the fixed stock cached while positions and articulated poses advance at output fps.
     old = tuple(layer.copy() for layer in old)
     if magazine is None:
         _pinned_background(stage, old, options.layout)
@@ -555,20 +560,19 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
         captions = tuple(_captions(stage, scene.narration, timing.audio, options.caption_numbers))
     starts = tuple(caption[0] for caption in captions)
     header = _portrait_header(stage, options) if stage.vertical else ()
-    prior = -1
-    hit_step = drawing_step(impact, timing.fps) if impact is not None else None
+    hit_step = impact * DRAW_FPS / timing.fps if impact is not None else None
     pace = timing.authored_time(1, reference=REFERENCE_SECONDS)
     for index in range(timing.frame_count):
-        step = drawing_step(index, timing.fps)
-        if step != prior:
-            layers = _stage_frame(stage, options, old, external, step, timing.duration_sec, hit_step, pace, magazine)
-            prior = step
         at = index / timing.fps
+        layers = _stage_frame(stage, options, old, external, at * DRAW_FPS, timing.duration_sec, hit_step, pace, magazine)
         camera = _camera(options.camera, at / pace, timing.duration_sec / pace, min(w, h))
+        pulse, pan = camera_accents(at, timing.duration_sec)
+        zoom, x, y = camera
         shake = camera_shake(index, impact, stage.unit)
         if stage.vertical:
-            zoom, x, y = camera
-            camera = (1 + (zoom - 1) * .32, x * .55, y * .49)
+            camera = (1 + (zoom - 1) * .32 + pulse * .46, x * .55 + pan * stage.unit * .62, y * .49)
+        else:
+            camera = (zoom + pulse, x + pan * stage.unit, y)
         # The table uses edge extension. Transparent midground and foreground keep their silhouettes.
         background = _view(layers[0], camera, PARALLAX[0], shake)
         if background.getchannel("A").getextrema()[0] != 255:
@@ -580,8 +584,8 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
             plate.alpha_composite(_view(layer, camera, plane, shake))
         for image, position in header:
             plate.alpha_composite(image, position)
-        if stage.vertical and hit_step is not None and step >= hit_step:
-            image, position = _portrait_stamp(stage, options.stamp, min(6, int((step - hit_step) / pace)), seed)
+        if stage.vertical and impact is not None and index >= impact:
+            image, position = _portrait_stamp(stage, options.stamp, min(14, round((index - impact) / pace)), seed, timing.fps)
             plate.alpha_composite(image, position)
         caption_index = bisect_right(starts, at) - 1
         if caption_index >= 0 and (not timing.continuous or at < timing.caption_blocks[caption_index].end_sec):
@@ -601,7 +605,7 @@ def render_scene(spec, scene, timing, media):
     impact = None
     if options.stamp:
         original = stamp_time(options, timing)
-        at = safe_beat(timing, original, latest=(timing.frame_count - 1) / timing.fps, grid_fps=DRAW_FPS)
+        at = safe_beat(timing, original, latest=(timing.frame_count - 1) / timing.fps)
         impact = impact_frame(at, timing.fps, timing.frame_count)
     external = []
     for item in options.cutouts:
@@ -612,7 +616,9 @@ def render_scene(spec, scene, timing, media):
     foley = effects(options.foley, timing, impact / timing.fps if impact is not None else None,
                     timing.authored_time(1, reference=REFERENCE_SECONDS))
     magazine = prepare_magazine(stage, options, seed) if options.module else None
+    display = (tuple(text for _, text in _caption_blocks(scene.narration, options.caption_numbers, 49 if stage.vertical else 68))
+               if not timing.continuous else None)
     return SceneRender(_frames(stage, spec, options, scene, timing, seed, external, impact, magazine), foley,
                        impact / timing.fps if impact is not None else None,
                        matting_models=magazine.models if magazine else (),
-                       color_luts=(magazine.lut,) if magazine and magazine.lut else ())
+                       color_luts=(magazine.lut,) if magazine and magazine.lut else (), caption_texts=display)

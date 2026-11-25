@@ -161,6 +161,20 @@ def _plain(value):
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", value or "")).split())
 
 
+def clean_author(value):
+    """Collapse adjacent duplicate words and repeated names from provider metadata."""
+    result, keys = [], []
+    for word in _plain(str(value or "")).split():
+        result.append(word)
+        keys.append(word.strip(",;:.()[]").casefold())
+        for length in range(1, len(keys) // 2 + 1):
+            if keys[-length:] == keys[-2 * length:-length]:
+                del result[-2 * length:-length]
+                del keys[-2 * length:-length]
+                break
+    return " ".join(result)
+
+
 def _commons(query, video, orientation, limit):
     exact = query.casefold().startswith("file:")
     settings = ({"titles": query.replace("_", " "), "redirects": 1} if exact else
@@ -187,7 +201,7 @@ def _commons(query, video, orientation, limit):
         fields = ("url",) if video else ("thumburl", "url")
         urls = tuple(dict.fromkeys(info[field] for field in fields if info.get(field)))
         if urls:
-            author = _plain(metadata.get("Artist", {}).get("value"))
+            author = clean_author(metadata.get("Artist", {}).get("value"))
             extension = {"video/webm": ".webm", "video/ogg": ".ogv", "video/mp4": ".mp4"}.get(mime)
             if not video or extension:
                 yield Candidate(urls, info.get("descriptionurl", ""), author[:180], license_name,
@@ -278,7 +292,10 @@ def _checked_asset(candidate, stage, video, orientation, max_duration, start):
 def media_credit(path):
     """Return the source, author, reuse license and page attached to a cached file."""
     try:
-        return json.loads(Path(path).with_suffix(".json").read_text(encoding="utf-8"))
+        entry = json.loads(Path(path).with_suffix(".json").read_text(encoding="utf-8"))
+        if entry.get("author"):
+            entry["author"] = clean_author(entry["author"])
+        return entry
     except (OSError, ValueError):
         return {}
 
@@ -308,7 +325,7 @@ def write_media_credits(path, credits):
     lines = ["# Créditos da mídia usada no render", ""]
     for item in credits:
         title = (item.get("title") or item.get("source", "")).replace("[", "\\[").replace("]", "\\]")
-        credit = " · ".join(filter(None, (item["source"], item.get("author"), item.get("license"))))
+        credit = " · ".join(filter(None, (item["source"], clean_author(item.get("author")), item.get("license"))))
         if item.get("type") == "video":
             credit += f" · trecho a partir de {item.get('start_sec', 0):g} s"
         license_url = item.get("license_url")
@@ -359,7 +376,7 @@ def _fetch(query, source, orientation, *, video=False, limit=0, start=0):
                                 continue
                             target = cache / (key + asset.suffix)
                             credit = stage / "credit.json"
-                            credit.write_text(json.dumps({"source": candidate.source, "author": candidate.author,
+                            credit.write_text(json.dumps({"source": candidate.source, "author": clean_author(candidate.author),
                                                           "license": candidate.license, "url": candidate.page,
                                                           "title": candidate.title, "license_url": candidate.license_url,
                                                           "type": "video" if video else "image", "start_sec": start},

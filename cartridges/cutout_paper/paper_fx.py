@@ -97,6 +97,19 @@ def cutout(art, *, border=3, seed=11):
     return shadow
 
 
+def edge_textures(piece, seed):
+    """Precompute three soft edge grains without moving the silhouette."""
+    alpha = np.asarray(piece.getchannel("A"), dtype=np.int16)
+    edge = (alpha > 16) & (alpha < 246)
+    result = []
+    for index in range(3):
+        grain = np.random.default_rng(seed + index).integers(-6, 7, alpha.shape, dtype=np.int16)
+        variation = piece.copy()
+        variation.putalpha(Image.fromarray(np.clip(alpha + grain * edge, 0, 255).astype(np.uint8)))
+        result.append(variation)
+    return tuple(result)
+
+
 def paper_card(size, fill, seed):
     w, h = size
     image = Image.new("RGBA", size)
@@ -111,13 +124,30 @@ def paper_card(size, fill, seed):
 
 
 @lru_cache(maxsize=30)
-def tape(width, angle, seed):
+def _tape(width, angle, seed):
     width = max(12, width)
     image = paper_card((width, max(9, round(width * .28))), (234, 203, 134, 161), seed)
     d = ImageDraw.Draw(image)
     d.line((4, 4, width - 4, 5), fill=(255, 235, 184, 120))
     d.line((4, image.height - 4, width - 4, image.height - 4), fill=(176, 132, 76, 90))
     return _multiply(image, _fibers(image.size, seed)).rotate(angle, Image.Resampling.BICUBIC, expand=True)
+
+
+def tape_card_corner(canvas, card, width, *, blocked, seed):
+    """Tape a rectangular paper corner only when it clears all silhouette boxes."""
+    left, top, right, bottom = card
+    if not (0 <= left < right <= canvas.width and 0 <= top < bottom <= canvas.height):
+        return None
+    piece = _tape(width, -14, seed)
+    x, y = left + width // 8, top + width // 12
+    box = (x, y, x + piece.width, y + piece.height)
+    if box[2] > right or box[3] > bottom or any(
+        box[0] < other[2] and other[0] < box[2] and box[1] < other[3] and other[1] < box[3]
+        for other in blocked
+    ):
+        return None
+    canvas.alpha_composite(piece, (x, y))
+    return box
 
 
 @lru_cache(maxsize=24)

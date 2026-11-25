@@ -67,3 +67,8 @@ O arquivo `vendor/gsap.min.js` é o bundle original do GSAP 3.14.2 publicado no 
 Os oito ícones da rede vêm de `lucide-static` 0.468.0. [Licença do conjunto](vendor/LUCIDE-LICENSE)
 
 O QR da demonstração usa correção H. A máscara foi composta para cobrir aproximadamente 30% dos módulos e manter a leitura desse exemplo. O limite de 30% da correção H se refere a palavras-código. [Especificação da Denso Wave](https://www.qrcode.com/en/about/standards.html)
+
+## Erros Proibidos (Lições Aprendidas)
+
+- Em `subject_depth_title`, use o mesmo enquadramento e a mesma curva de transformação para a foto e o recorte. Os pesos de matting devem estar na allowlist comercial. Créditos exibem cada nome apenas uma vez quando houver repetição da fonte.
+- Mantenha título e base visual em Frame 0. Anime a 30 fps e distribua mudanças visuais a cada 2,5–3 s em cenas acima de 5 s. Respeite pontuação final e blocos de legenda com duas ou mais palavras. Valide o master e o `qa_grid.png` antes de publicar. [Regras completas](../../AGENTS.md#erros-proibidos-lições-aprendidas)

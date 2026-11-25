@@ -110,15 +110,18 @@ def emu(width, phase, state="run", flip=False, variant=0):
     _emu_leg(draw, (111, 153), stride, True)
     neck = (159, 132)
     turn, narrow = False, False
-    close = phase == 9
+    close = abs(phase - 9) < .55
     chest = 0
     head_tilt = 4 * cos(angle)
     tilt = (18 if state == "run" else -4) + 9 * sin(angle) + 3 * variant
     if state == "look":
-        peck = {24: .18, 25: .54, 26: 1.0, 27: .90, 28: .50, 29: .21}.get(phase, 0)
+        pecks = (0, .18, .54, 1.0, .90, .50, .21, 0)
+        index = int(phase) - 23
+        fraction = phase % 1
+        peck = pecks[index] + (pecks[index + 1] - pecks[index]) * fraction if 0 <= index < len(pecks) - 1 else 0
         turn = 10 <= phase <= 19
         narrow = phase in (9, 10, 19, 20)
-        close = phase in (12, 26, 36)
+        close = any(abs(phase - target) < .55 for target in (12, 26, 36))
         tilt = -8 + 7 * sin(phase * tau / 42) + peck * 67 - (9 if turn else 0)
         head_tilt = -6 + peck * 31 + 5 * cos(phase * tau / 42)
         chest = 3 * peck
@@ -128,7 +131,7 @@ def emu(width, phase, state="run", flip=False, variant=0):
         neck = (159, 132 + 5 * sin(beat))
         tilt = -14 + 13 * sin(beat - .40)
         head_tilt = -7 + 8 * cos(beat)
-        close = phase == 16
+        close = abs(phase - 16) < .55
     _pivot(image, _emu_neck(), neck, (31, 102), tilt)
     body = _emu_body(("#5d5143", "#6e614d", "#514b42")[variant % 3])
     if chest:

@@ -1,4 +1,4 @@
-"""An illustrated paper cartridge, with 12 fps wax drawings under a continuous camera."""
+"""An illustrated paper cartridge with continuous rigs and low-rate pigment boil."""
 
 import sys
 import wave
@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from pydantic import BaseModel, Field
 
+from core.motion import camera_accents, ease_in_out_cubic, ease_out_back, visual_cues
 from core.registry import register_style
 from core.schema import SceneRender
 from plugins.media.openmoji_stickers import sticker_path
@@ -22,9 +23,9 @@ from plugins.styles import paint_art as art
 from plugins.styles.crayon_draw_on import OPENING_SECONDS, DrawOn, Stroke
 from plugins.styles.crayon_materials import BROWN, INDIGO, WHITE_WAX, Sheet, smoothstep, wash_pigment
 from plugins.styles.crayon_motion import blink, body_sway, flight_position, gait, rocking, walk_position, walking_animal, wing_pose
-from plugins.styles.crayon_pages import aligned_caption, captions, mobile_safe_box, page_turn, title
+from plugins.styles.crayon_pages import aligned_caption, caption_pages, captions, mobile_safe_box, page_turn, title
 from plugins.styles.paint_captions import word_key, word_starts
-from plugins.styles.paint_motion import DRAWING_FPS, boil_offset, camera, drawing_step, saw_wrist
+from plugins.styles.paint_motion import boil_offset, camera, drawing_step, saw_wrist
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
@@ -272,12 +273,12 @@ def _saw_sprite(image):
     return turned, grip
 
 
-def _rms_mouths(path, start_sample=0, sample_count=None):
+def _rms_mouths(path, start_sample=0, sample_count=None, fps=30):
     levels = []
     with wave.open(str(path)) as audio:
         if audio.getsampwidth() != 2:
             raise ValueError("Crayon Book expects 16-bit PCM narration")
-        frames = audio.getframerate() // DRAWING_FPS
+        frames = audio.getframerate() // fps
         audio.setpos(start_sample)
         remaining = audio.getnframes() - start_sample if sample_count is None else sample_count
         while remaining > 0:
@@ -412,8 +413,7 @@ def _pose_tracks(characters, words, pace=1):
                          key=lambda pair: pair[0])) for actor in characters]
 
 
-def _actor_and_tool(sheet, actor, index, step, mouth, saw, shocked, track, together=(0, 0), *, pace=1):
-    at = step / DRAWING_FPS
+def _actor_and_tool(sheet, actor, index, at, step, mouth, saw, shocked, track, together=(0, 0), *, pace=1):
     saw = saw if saw is not None and at >= saw[2] else None
     wrist = saw_wrist((at - saw[2]) / pace) if saw else 0
     pose = actor.pose
@@ -431,9 +431,8 @@ def _actor_and_tool(sheet, actor, index, step, mouth, saw, shocked, track, toget
     pivot = puppet.height * .90
     puppet = puppet.transform(puppet.size, Image.Transform.AFFINE, (1, -lean, lean * pivot, 0, 1, 0),
                               Image.Resampling.BICUBIC)
-    dx, dy = boil_offset(step, index)
     x, y = _actor_position(sheet.size, actor, puppet)
-    left, top = x + dx + together[0], y + dy + rise + together[1]
+    left, top = x + together[0], y + rise + together[1]
     if saw:
         tool, grip, _ = saw
         hand_x, hand_y = art.POSES[pose][1][-1]
@@ -469,8 +468,7 @@ def _centered(image, x, y):
     return round(x - image.width / 2), round(y - image.height / 2)
 
 
-def _draw_stickers(sheet, stickers, step, pace=1):
-    at = step / DRAWING_FPS
+def _draw_stickers(sheet, stickers, at, step, pace=1):
     dove = next((item for item in stickers if item.sticker.kind == "dove" and at >= item.start), None)
     center = None
     if dove:
@@ -479,7 +477,7 @@ def _draw_stickers(sheet, stickers, step, pace=1):
         if sticker.flight_from:
             elapsed = (at - dove.start) / pace
             route = flight_position(sticker.flight_from, route, elapsed, sticker.flight_seconds)
-            phase = int(step / pace) % 6 if elapsed < sticker.flight_seconds else 2
+            phase = (elapsed * 12) % 6 if elapsed < sticker.flight_seconds else 2
             image = wing_pose(image.tobytes(), image.size, phase)
         x, y = center = _point(sheet.size, *route)
         _mark(sheet, image, _centered(image, x, y), step)
@@ -492,6 +490,9 @@ def _draw_stickers(sheet, stickers, step, pace=1):
             y = center[1] + dove.image.height * .20
         else:
             x, y = _point(sheet.size, sticker.x, sticker.y)
+            scale = .86 + .14 * ease_out_back((at - item.start) / (.32 * pace))
+            image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                                 Image.Resampling.BICUBIC)
         _mark(sheet, image, _centered(image, x, y), step)
 
 
@@ -507,7 +508,7 @@ def _wash(size, kind):
                         (.15, .24, .50) if kind == "rain" else (.43, .32, .61))
 
 
-def _white_marks(sheet, kind, step):
+def _white_marks(sheet, kind, at, step):
     size = sheet.size
     unit = min(size)
     mask = Image.new("L", size)
@@ -517,7 +518,7 @@ def _white_marks(sheet, kind, step):
         for column in range(18):
             for row in range(6):
                 x = (column + rng.uniform(.05, .95)) / 18
-                y = ((row + rng.random()) / 6 * .73 + step * .019) % .73
+                y = ((row + rng.random()) / 6 * .73 + at * .228) % .73
                 dx = rng.uniform(.009, .017)
                 draw.line([_point(size, x, y), _point(size, x - dx, y + rng.uniform(.03, .062))],
                           fill=255, width=max(2, round(unit * rng.uniform(.005, .011))))
@@ -577,11 +578,10 @@ def _prop_art(item, size, at, pace=1):
         yield image, (x - image.width // 2, round(y - image.height - rise))
 
 
-def _drawing(options, size, layers, stickers, step, mouth, punch, tracks, pace=1):
-    at = step / DRAWING_FPS
+def _drawing(options, size, layers, stickers, at, step, mouth, punch, tracks, pace=1):
     sheet = _landscape(size, options.background).copy()
     if options.wash:
-        _white_marks(sheet, options.wash, int(step / pace))
+        _white_marks(sheet, options.wash, at / pace, step)
     for item in layers.back:
         if at >= item.start:
             for image, position in _prop_art(item, size, at, pace):
@@ -589,7 +589,7 @@ def _drawing(options, size, layers, stickers, step, mouth, punch, tracks, pace=1
     floating_ark = next((item.prop for item in layers.front if item.prop.layer == "ark_hull"), None)
     offset = _prop_offset(floating_ark, at / pace, min(size)) if floating_ark else (0, 0)
     for index, actor in enumerate(options.characters):
-        _actor_and_tool(sheet, actor, index, step, mouth, layers.saws.get(actor.name),
+        _actor_and_tool(sheet, actor, index, at, step, mouth, layers.saws.get(actor.name),
                         index == 0 and punch is not None and 0 <= at - punch < .55 * pace,
                         tracks[index], offset, pace=pace)
     # Like rig.js's knock layer, the hull clears the pigment of the puppet behind it.
@@ -597,7 +597,7 @@ def _drawing(options, size, layers, stickers, step, mouth, punch, tracks, pace=1
         if at >= item.start:
             for image, position in _prop_art(item, size, at, pace):
                 _mark(sheet, image, position, step)
-    _draw_stickers(sheet, stickers, step, pace)
+    _draw_stickers(sheet, stickers, at, step, pace)
     return sheet
 
 
@@ -614,12 +614,15 @@ def _opening_plan(options, size, layers):
     return DrawOn(size, groups, ridges)
 
 
-def _camera_image(image, options, at, duration, punch):
+def _camera_image(image, options, at, duration, punch, *, rhythm=(0.0, 0.0)):
     actor = next((actor for actor in options.characters if actor.talking),
                  options.characters[0] if options.characters else None)
     width, height = image.size
     focus = (.5, .44) if actor is None else (actor.x, max(.12, actor.y - min(image.size) / height * .40 * actor.scale))
     zoom, x, y = camera(options.camera, at, duration, punch, focus)
+    accent, pan = rhythm
+    zoom += accent
+    x = max(.05, min(.95, x + pan * 10))
     if height > width:
         zoom = 1 + (zoom - 1) * .38
     left, top = (1 - 1 / zoom) * width * x, (1 - 1 / zoom) * height * y
@@ -627,7 +630,7 @@ def _camera_image(image, options, at, duration, punch):
 
 
 def _first_page(options, size):
-    return _camera_image(Sheet(size).image(), options, 0, 1, None)
+    return _camera_image(_landscape(size, options.background).image(), options, 0, 1, None)
 
 
 def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch, next_options, narration, pace=1):
@@ -646,17 +649,14 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
     tracks = _pose_tracks(options.characters, words, pace)
     last_frame = (timing.frame_count - 1) / timing.fps
     turn_at = max(0.0, last_frame - .57 * pace) if timing.continuous else max(timing.audio.duration_sec, last_frame - .57)
-    beat = -1
     incoming = None
     for index in range(timing.frame_count):
         at = index / timing.fps
-        step = 0 if at < OPENING_SECONDS * pace else drawing_step(index, timing.fps)
-        if step != beat:
-            mouth = mouths[step] if step < len(mouths) else "closed"
-            sheet = _drawing(options, size, layers, stickers, step, mouth, punch, tracks, pace)
-            dry = sheet.image()
-            wet = sheet.image(_wash(size, options.wash)) if options.wash else None
-            beat = step
+        step = drawing_step(index, timing.fps)
+        mouth = mouths[index] if index < len(mouths) else "closed"
+        sheet = _drawing(options, size, layers, stickers, at, step, mouth, punch, tracks, pace)
+        dry = sheet.image()
+        wet = sheet.image(_wash(size, options.wash)) if options.wash else None
         page = dry
         if wet is not None and options.wash_prepainted:
             page = wet
@@ -664,13 +664,21 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
             reveal = (at - wash_at) / (.68 * pace)
             page = wet if reveal >= 1 else Image.composite(wet, dry, _sweep(size, reveal))
         if at < OPENING_SECONDS * pace:
-            page = opening.frame(page, at / pace)
-        frame = _camera_image(page, options, at / pace, duration / pace, None if punch is None else punch / pace)
-        lettering_step = drawing_step(index, timing.fps)
-        if heading and at >= .13 * pace:
-            heading.draw(frame, at / pace - .13, lettering_step)
+            # Let the first chalk strokes and the page title be visible on the opening frame.
+            page = opening.frame(page, .16 + (OPENING_SECONDS - .16) * at / (OPENING_SECONDS * pace))
+        frame = _camera_image(page, options, at / pace, duration / pace, None if punch is None else punch / pace,
+                              rhythm=camera_accents(at, duration))
+        for index_cue, cue in enumerate(visual_cues(duration)):
+            age = at - cue
+            if index_cue % 3 == 1 and 0 <= age <= .9:
+                w, h = frame.size
+                draw = ImageDraw.Draw(frame)
+                draw.arc((.19 * w, .32 * h, .38 * w, .46 * h), 265,
+                         265 + 246 * ease_in_out_cubic(age / .65), fill=BROWN, width=max(2, min(w, h) // 155))
+        if heading:
+            heading.draw(frame, max(.13, at / pace), step)
         if not timing.continuous and at >= caption_delay:
-            subtitles[bisect_right(caption_starts, at) - 1].draw(frame, at - caption_delay, lettering_step)
+            subtitles[bisect_right(caption_starts, at) - 1].draw(frame, at - caption_delay, step)
         if next_options is not None and turn_at < at <= last_frame:
             if incoming is None:
                 incoming = _first_page(next_options, size)
@@ -678,7 +686,7 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
         if timing.continuous:
             caption = bisect_right(caption_starts, at) - 1
             if caption >= 0 and at < aligned[caption].end_sec:
-                subtitles[caption].draw(frame, 1, lettering_step)
+                subtitles[caption].draw(frame, 1, step)
         yield frame.resize((spec.width, spec.height), Image.Resampling.BICUBIC).tobytes()
 
 
@@ -688,7 +696,7 @@ def render_scene(spec, scene, timing, media):
     index = next(index for index, item in enumerate(spec.scenes) if item.id == scene.id)
     following = spec.scenes[index + 1] if index + 1 < len(spec.scenes) else None
     next_options = BookOptions.model_validate(following.options) if following and following.plugin == scene.plugin else None
-    # Rasterize the tooth in world coordinates before the 24 fps camera and upscale.
+    # Rasterize the tooth in world coordinates before the presentation camera and upscale.
     scale = min(1, 960 / max(spec.width, spec.height))
     size = (max(96, round(spec.width * scale)), max(96, round(spec.height * scale)))
     if size[1] > size[0]:
@@ -701,7 +709,8 @@ def render_scene(spec, scene, timing, media):
     if scene.cut_music_for_punchline:
         punch = min((timing.frame_count - 1) / timing.fps,
                     _cue(words, options.punchline_at_word, default=max(0, timing.audio.duration_sec - .25 * pace)))
-    mouths = _rms_mouths(timing.audio.path, timing.audio.start_sample, timing.audio.samples) if options.characters else ()
+    mouths = _rms_mouths(timing.audio.path, timing.audio.start_sample, timing.audio.samples, timing.fps) if options.characters else ()
     return SceneRender(_frames(spec, timing, options, size, words, _layers(options, size, words),
                                tuple(_stickers(options, words, size, media, pace)), mouths, punch, next_options,
-                               scene.narration, pace), punchline_at_sec=punch)
+                               scene.narration, pace), punchline_at_sec=punch,
+                       caption_texts=tuple(caption_pages(scene.narration, size)) if not timing.continuous else None)

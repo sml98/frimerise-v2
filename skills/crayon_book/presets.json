@@ -1,11 +1,11 @@
 {
   "style": "crayon_book",
   "formats": {
-    "16:9": {"width": 1920, "height": 1080, "fps": 24},
+    "16:9": {"width": 1920, "height": 1080, "fps": 30},
     "9:16": {
       "width": 1080,
       "height": 1920,
-      "fps": 24,
+      "fps": 30,
       "mobile_safe_box_px": {"left": 65, "top": 288, "right": 888, "bottom": 1248}
     }
   },

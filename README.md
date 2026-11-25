@@ -17,7 +17,7 @@ Os testes usam narração e frames gerados localmente. O teste de integração p
 
 ## Demo Crayon Book
 
-O demo reconta a história da Arca em terceira pessoa, com locução em PT-BR. Cada página começa com 0,9 s de desenho progressivo pelo comprimento dos contornos e pela ordem das hachuras. Os personagens e objetos usam poses a 12 fps, com câmera a 24 fps. Em cenas com personagens, a Arca mede 2,2 vezes a altura visível do maior deles. `wash: "rain"` ou `wash: "stars"` revela marcas de cera branca sob a aquarela. `wash_at_word` alinha a entrada da aquarela à narração. A duração é definida pela fala medida e pelas pausas de cada cena. [Referências e créditos](assets/README.md#crayon-book)
+O demo reconta a história da Arca em terceira pessoa, com locução em PT-BR. Cada página abre com traços visíveis e completa o desenho progressivo em 0,9 s. Câmera, personagens e objetos se movem a 30 fps. O boil mantém a textura da cera a 12 Hz. Em cenas com personagens, a Arca mede 2,2 vezes a altura visível do maior deles. `wash: "rain"` ou `wash: "stars"` revela marcas de cera branca sob a aquarela. `wash_at_word` alinha a entrada da aquarela à narração. A duração é definida pela fala medida e pelas pausas de cada cena. [Referências e créditos](assets/README.md#crayon-book)
 
 ```bash
 python -m core.engine episodes/demo_crayon.json exports/demo_crayon.mp4 --keyframes exports/demo_crayon_keyframes
@@ -40,7 +40,7 @@ A sessão `frime` importa a revisão comprometida de um Git bundle, verifica a L
 
 ## Cut-out Paper
 
-O segundo cartucho faz colagens editoriais em Python com recortes articulados a 12 fps, câmera a 30 fps, três planos de paralaxe e foley procedural. O exemplo da Guerra dos Emus usa cinco cenas narradas em terceira pessoa em PT-BR. [Skill e opções de cena](cartridges/cutout_paper/SKILL.md) · [Fontes históricas e créditos](assets/README.md#cut-out-paper)
+O segundo cartucho faz colagens editoriais em Python com recortes e câmera a 30 fps, três planos de paralaxe e foley procedural. O exemplo da Guerra dos Emus usa cinco cenas narradas em terceira pessoa em PT-BR. [Skill e opções de cena](cartridges/cutout_paper/SKILL.md) · [Fontes históricas e créditos](assets/README.md#cut-out-paper)
 
 ```bash
 python -m cartridges.cutout_paper examples/guerra_dos_emus.json exports/guerra_dos_emus.mp4 --aspect 9:16 --inspect exports/guerra_dos_emus_inspecao
@@ -51,6 +51,8 @@ python -m cartridges.cutout_paper examples/guerra_dos_emus.json exports/guerra_d
 O launcher do Colab aceita episódios de `episodes/` ou `examples/` com `--aspect` opcional. Use `FRIMERISE_COLAB_GPU=T4` para selecionar a T4. O render local usa a seleção de encoder do núcleo.
 
 ## Render e auditoria
+
+Cada render produz `<slug>_qc/qa_grid.png` e `<slug>_qc/relatorio_qc_blindagem.json` ao lado do vídeo. O gate avalia o AAC final, a duração, o primeiro quadro, a pontuação da fala por cena, as legendas e a variação visual sem contar a faixa de legenda. Em cenas acima de 5 s, as janelas avaliadas e suas falhas são registradas em segundos. Para repetir a inspeção usando o relatório existente, rode `python -m core.qc_gate exports/<slug>.mp4`.
 
 ### Áudio Único Contínuo
 

@@ -14,6 +14,8 @@ const white = "#f3f5f8";
 const dark = "#0b0f17";
 const red = "#ff625f";
 const formatter = new Intl.NumberFormat("pt-BR", { useGrouping: "always" });
+const entranceEase = "back.out(1.05)";
+const cameraEase = "power2.inOut";
 
 function svg(parent, tag, attributes) {
   const element = document.createElementNS(svgNS, tag);
@@ -328,10 +330,10 @@ function open_patent_network(tl, seconds, payload) {
   };
 }
 
-function fit(element, limit) {
+function fit(element, limit, fitWidth = false) {
   element.style.fontSize = "";
   let size = parseFloat(getComputedStyle(element).fontSize);
-  while (element.scrollHeight > limit && size > 9) {
+  while ((element.scrollHeight > limit || (fitWidth && element.scrollWidth > element.clientWidth)) && size > 9) {
     size -= 1;
     element.style.fontSize = size + "px";
   }
@@ -340,13 +342,13 @@ function fit(element, limit) {
 function camera(tl, seconds, transition, enterAt, exitAt) {
   const stage = document.querySelector(".stage");
   tl.fromTo(stage, { scale: 1, rotationX: 1.5, rotationY: -2, transformPerspective: 1200 }, {
-    scale: 1.04, rotationX: -2, rotationY: 2.3, duration: seconds, ease: "none",
+    scale: 1.04, rotationX: -2, rotationY: 2.3, duration: seconds, ease: cameraEase,
   }, 0);
   tl.fromTo(".grid-plane", { transformPerspective: 740, rotationX: 51, x: -14, y: -13 }, {
-    x: 24, y: 35, rotationX: 55, duration: seconds, ease: "none",
+    x: 24, y: 35, rotationX: 55, duration: seconds, ease: cameraEase,
   }, 0);
   tl.fromTo(".backdrop", { scale: 1.03, xPercent: -.5, yPercent: .2 }, {
-    scale: 1.13, xPercent: 1.2, yPercent: -.5, duration: seconds, ease: "none",
+    scale: 1.13, xPercent: 1.2, yPercent: -.5, duration: seconds, ease: cameraEase,
   }, 0);
   tl.fromTo(".glow-amber", { opacity: .55, xPercent: -4, scale: .94 }, {
     opacity: 1, xPercent: 0, scale: 1.09, duration: seconds / 2, yoyo: true, repeat: 1, ease: "sine.inOut",
@@ -360,11 +362,26 @@ function camera(tl, seconds, transition, enterAt, exitAt) {
   tl.fromTo(".wipe", { xPercent: -112, opacity: .2 }, {
     xPercent: 510, opacity: .85, duration: transition, ease: "power2.inOut", immediateRender: false,
   }, exitAt);
-  tl.fromTo(graphic, { scale: 1.07 }, { scale: 1, duration: transition, ease: "power3.out" }, 0);
+  tl.fromTo(graphic, { scale: .965 }, { scale: 1, duration: transition, ease: entranceEase }, 0);
   tl.to(graphic, { scale: 1.055, duration: transition, ease: "power2.in" }, exitAt);
   tl.fromTo([kicker, heading, kpi, subtitle], { x: -8 }, {
-    x: 0, duration: transition, stagger: .018, ease: "power3.out",
+    x: 0, duration: transition, stagger: .018, ease: entranceEase,
   }, 0);
+}
+
+function sceneRhythm(tl, payload, surfaces, mark) {
+  (payload.visualCues || []).forEach((at, index) => {
+    const span = Math.min(.51, (payload.durationSec - at) / 2);
+    if (index % 3 !== 1 && surfaces.length) {
+      const transform = index % 3 === 0 ? { scale: 1.14 } : { xPercent: -3 };
+      tl.to(surfaces, { ...transform, duration: span, ease: cameraEase, repeat: 1, yoyo: true }, at - .18);
+    }
+    if (index % 3 === 1) {
+      tl.fromTo(mark, { opacity: 0, scaleX: .06 }, { opacity: .88, scaleX: 1, duration: span,
+        ease: entranceEase, immediateRender: false }, at);
+      tl.to(mark, { opacity: 0, duration: span, ease: cameraEase }, at + span * 1.7);
+    }
+  });
 }
 
 const palettes = { amber: "#f59e0b", emerald: "#34e5ab", cyan: "#56d9f6", crimson: "#fb687a", violet: "#ba9dff" };
@@ -376,7 +393,7 @@ function stagePanel(className) {
 function enter(tl, nodes, seconds, start = .11, stride = .08) {
   tl.fromTo(nodes, { y: 19, autoAlpha: 0, scale: .97 }, {
     y: 0, autoAlpha: 1, scale: 1, duration: seconds * .17, stagger: seconds * stride,
-    ease: "power3.out",
+    ease: entranceEase,
   }, start * seconds);
 }
 
@@ -692,38 +709,52 @@ function terminal_code(_tl, _seconds, { data }) {
 function subject_depth_title(tl, seconds, payload) {
   const root = document.querySelector(".depth-cover");
   const { photo, subject } = payload.media;
+  const layers = [];
   const [x, y] = payload.data.focus;
   root.style.setProperty("--frame-focus", `${x * 100}% ${y * 100}%`);
   if (photo) {
     const plate = document.createElement("img");
-    plate.className = "depth-photo";
+    plate.className = "depth-media depth-photo";
     plate.alt = "";
     plate.src = photo;
     root.append(plate);
-    tl.fromTo(plate, { scale: 1 }, { scale: 1.035, duration: seconds, ease: "none" }, 0);
+    layers.push(plate);
   }
   div("depth-veil", root);
   const titleBox = div("depth-title-box", root);
   const title = document.createElement("h1");
   title.textContent = payload.headline;
   titleBox.append(title);
-  fit(title, titleBox.clientHeight);
+  fit(title, titleBox.clientHeight, true);
   tl.fromTo(title, { yPercent: 13, scale: .94 }, {
-    yPercent: 0, scale: 1, duration: Math.min(.84, seconds * .27), ease: "power3.out",
+    yPercent: 0, scale: 1, duration: Math.min(.84, seconds * .27), ease: entranceEase,
   }, 0);
   if (subject) {
     const cutout = document.createElement("img");
-    cutout.className = "depth-subject";
+    cutout.className = "depth-media depth-subject";
     cutout.alt = "";
     cutout.src = subject;
     root.append(cutout);
-    tl.fromTo(cutout, { scale: 1.005 }, { scale: 1.057, duration: seconds, ease: "none" }, 0);
+    layers.push(cutout);
   }
+  if (layers.length) tl.fromTo(layers, { scale: 1.01 }, { scale: 1, duration: .48, ease: cameraEase }, 0);
+  sceneRhythm(tl, payload, layers, div("rhythm-mark", root));
   div("depth-tail", root);
   div("depth-kicker", root, payload.kicker);
   if (payload.subtitle) div("depth-subtitle", root, payload.subtitle);
   const credit = document.querySelector(".background-credit");
   credit.textContent = creditText(payload.media.photoCredit);
+}
+
+function assertDepthAlignment() {
+  const layers = [...document.querySelectorAll(".depth-media")];
+  if (layers.length !== 2) return;
+  const transforms = layers.map(layer => {
+    const css = getComputedStyle(layer);
+    const box = layer.getBoundingClientRect();
+    return [box.x, box.y, box.width, box.height, css.transform, css.objectFit, css.objectPosition].join("|");
+  });
+  if (transforms[0] !== transforms[1]) throw new Error("subject_depth_title: bg_transform != fg_transform");
 }
 
 const modules = { kpi_hero, bar_comparison: generic_bars, line_chart, timeline_steps, split_vs,
@@ -801,6 +832,7 @@ async function setup(payload) {
     payload.exitAt ?? payload.durationSec - transition);
   const build = payload.module ? modules[payload.module] : components[payload.visual_type];
   const beats = build(timeline, payload.durationSec, payload);
+  if (payload.module !== "subject_depth_title") sceneRhythm(timeline, payload, [graphic], div("rhythm-mark", graphic));
   applyOverlay(timeline, payload.durationSec, payload);
   if (badge.textContent) {
     timeline.fromTo(badge, { autoAlpha: 0, y: 14, scale: .86 }, {
@@ -833,6 +865,7 @@ window.renderAt = async (tSec, progress, payload) => {
   if (composition?.payload !== payload) composition = await setup(payload);
   const time = Math.min(payload.durationSec, Math.max(0, tSec));
   composition.timeline.seek(time, false);
+  if (payload.module === "subject_depth_title") assertDepthAlignment();
   composition.beats?.(progress);
   updateCaption(time, composition);
   gsap.ticker.sleep();

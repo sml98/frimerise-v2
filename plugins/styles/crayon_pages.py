@@ -105,9 +105,18 @@ def _writing(text, size, start, seconds, *, heading=False):
     return Writing(paper, position, tuple(letters), BROWN if heading else INDIGO, start, seconds)
 
 
-def captions(narration, words, size, duration):
+def caption_pages(narration, size):
     pages = textwrap.wrap(narration, width=76 if size[1] > size[0] else 72,
                           break_long_words=False, break_on_hyphens=False)
+    for index in range(len(pages) - 1, -1, -1):
+        if len(pages) > 1 and len(pages[index].split()) == 1:
+            start = max(0, index - 1)
+            pages[start:start + 2] = [" ".join(pages[start:start + 2])]
+    return pages
+
+
+def captions(narration, words, size, duration):
+    pages = caption_pages(narration, size)
     starts, offset = [], 0
     for page in pages:
         starts.append(words[offset][1] if offset else 0.0)

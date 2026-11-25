@@ -4,7 +4,7 @@
   "aspect_ratio": "16:9",
   "width": 1920,
   "height": 1080,
-  "fps": 24,
+  "fps": 30,
   "tts_plugin": "recorded_voice",
   "tts_locale": "pt-BR",
   "voice_id": "voices/demo_crayon/manifest.json",

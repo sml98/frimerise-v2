@@ -11,6 +11,7 @@ from core.color_grade import LutName, grade_photo, lut_name
 from core.cutout_matting import matting_model, remove_background
 from core.html_adapter import render_frames
 from core.media_fetcher import fetch_broll, fetch_image, media_credit
+from core.motion import visual_cues
 from core.schema import CaptionBlock, SceneRender
 
 from .foley import Cue, effects, stamp_time, transition_duration, transition_times
@@ -145,6 +146,7 @@ def composition_payload(scene_id, options, timing, media=None):
                                       "broll_query", "broll_source", "broll_start_sec", "broll_duration_sec", "lut"}),
         "id": scene_id,
         "durationSec": timing.duration_sec,
+        "visualCues": visual_cues(timing.duration_sec),
         "transitionSec": transition_duration(timing),
         "enterAt": enter_at,
         "exitAt": exit_at,

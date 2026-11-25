@@ -11,12 +11,13 @@ from math import ceil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from .audio_aligner import align_audio
+from .audio_aligner import align_audio, caption_blocks
 from .audio_master import attach_beats, prepare_music, prepare_voice, probe_duration
 from .cutout_matting import APPROVED_MODELS
 from .encoder import encode_frames, run_ffmpeg
 from .html_adapter import encode_scenes
 from .media_fetcher import capture_media_credits, write_media_credits
+from .qc_gate import CAPTION_BANDS, qc_gate
 from .registry import TTSUnavailable, discover, get_plugin
 from .schema import SAMPLE_RATE, AudioTrackSpec, EpisodeSpec, SceneTiming
 from .tts_engine import ENGINES, synthesize_one
@@ -98,6 +99,8 @@ def _produce(spec, timeline, assets, services, directory, keyframes=None, worker
 
 def _picture_audit(renders, timeline):
     models = sorted({model for scene in renders for model in scene.matting_models})
+    if set(models) - APPROVED_MODELS:
+        raise ValueError(f"O render usou um modelo de matting fora da allowlist: {models}")
     luts = sorted({lut for scene in renders for lut in scene.color_luts})
     out = {"matting_models": models, "matting_model": models[0] if len(models) == 1 else None,
            "matting_license": "MIT" if models and set(models) <= APPROVED_MODELS else None,
@@ -108,20 +111,39 @@ def _picture_audit(renders, timeline):
     return out
 
 
-def _write_alignment(path, spec, timeline):
+def _alignment_data(spec, timeline, renders=None):
     data = []
-    for scene, timing in zip(spec.scenes, timeline, strict=True):
+    for index, (scene, timing) in enumerate(zip(spec.scenes, timeline, strict=True)):
         start = timing.start_sec
+        captions_expected = timing.continuous or scene.plugin in CAPTION_BANDS
+        blocks = timing.caption_blocks if timing.continuous else caption_blocks(timing.audio.words) if captions_expected else ()
         data.append({
-            "id": scene.id, "start_sec": start, "end_sec": timing.end_sec, "duration_sec": timing.duration_sec,
+            "id": scene.id, "plugin": scene.plugin, "start_sec": start, "end_sec": timing.end_sec,
+            "duration_sec": timing.duration_sec, "captions_expected": captions_expected,
+            "sentence_end": "" if timing.continuous else scene.narration.split()[-1],
             "words": [{"word": word.text, "start_sec": start + word.start_sec, "end_sec": start + word.end_sec}
                       for word in timing.audio.words],
             "caption_blocks": [{"text": block.text, "start_sec": start + block.start_sec, "end_sec": start + block.end_sec}
-                               for block in timing.caption_blocks],
+                               for block in blocks],
         })
+        if renders is not None and renders[index].caption_texts is not None:
+            data[-1]["display_captions"] = renders[index].caption_texts
+    return data
+
+
+def _write_alignment(path, spec, timeline):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"fps": spec.fps, "scenes": data}, ensure_ascii=False, indent=2) + "\n",
+    path.write_text(json.dumps({"fps": spec.fps, "scenes": _alignment_data(spec, timeline)}, ensure_ascii=False, indent=2) + "\n",
                     encoding="utf-8")
+
+
+def _qc_output(final, destination, spec, timeline, reference, report, renders):
+    folder = destination.with_name(f"{destination.stem}_qc")
+    result = qc_gate(final, _alignment_data(spec, timeline, renders), reference, measured=report,
+                     grid_path=folder / "qa_grid.png", report_path=folder / "relatorio_qc_blindagem.json")
+    if not result["passed"]:
+        failures = ", ".join(check for check, passed in result["checks"].items() if not passed)
+        raise ValueError(f"QC reprovou {destination.name} ({failures}). Veja {folder / 'relatorio_qc_blindagem.json'}")
 
 
 def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, continuous=False,
@@ -175,6 +197,9 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
         plan = get_plugin("exports", spec.niche_skill, optional=True) if spec.export_shorts_clips else None
         final, encoder, report, renders = _produce(spec, timeline, assets_root, services, work / "main", keyframes, workers,
                                                    music=music, voice_paths=voices)
+        picture_checks = _picture_audit(renders, timeline)
+        reference_duration = probe_duration(source) if source else timeline[-1].end_sec
+        _qc_output(final, output, spec, timeline, reference_duration, report, renders)
         exports = {output: final}
         for clip in plan(spec, timeline) if plan else ():
             if (not re.fullmatch(r"[a-z0-9_]+", clip.suffix)
@@ -188,16 +213,16 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
                               width=clip.width, height=clip.height, export_shorts_clips=False)
             offset = timeline[clip.first_scene].start_frame
             times = [replace(timing, start_frame=timing.start_frame - offset) for timing in timeline[span]]
-            exports[destination], _, _, _ = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}",
-                                                     workers=workers, music=music, voice_paths=voices)
+            clip_file, _, clip_report, clip_renders = _produce(variant, times, assets_root, services, work / f"clip-{clip.suffix}",
+                                                                workers=workers, music=music, voice_paths=voices)
+            _picture_audit(clip_renders, times)
+            _qc_output(clip_file, destination, variant, times, times[-1].end_sec, clip_report, clip_renders)
+            exports[destination] = clip_file
         for destination, staged in exports.items():
             staged.replace(destination)
         if alignment:
             _write_alignment(Path(alignment), spec, timeline)
         if audio_report:
-            reference_duration = (probe_duration(source) if source else
-                                  sum(timing.audio.duration_sec + scene.pause_after_sec
-                                      for scene, timing in zip(spec.scenes, timeline, strict=True)))
             beats = music.beats_until(report.duration_sec) if music else ()
             target = Path(audio_report)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +232,7 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
                 "audio_duration_sec": reference_duration, "video_duration_sec": report.duration_sec,
                 "beats_detected": len(beats), "beats_sec": beats, "bgm_ducking_applied": bool(music and spec.audio_plugin == "master_dsp"),
                 "pedalboard_applied": pedalboard, "denoise_applied": cleaned,
-                **_picture_audit(renders, timeline),
+                **picture_checks,
             }, indent=2) + "\n", encoding="utf-8")
         write_media_credits(output.with_name(f"{output.stem}_fontes.md"), credits)
     return encoder, report
@@ -248,7 +273,7 @@ def _automatic_spec(args, narration):
     aspect = args.aspect or "16:9"
     width, height = (1080, 1920) if aspect == "9:16" else (1920, 1080)
     return EpisodeSpec(title, style, aspect_ratio=aspect, width=width, height=height,
-                       fps=30 if style == "cutout_paper" else 24,
+                       fps=30 if style in CAPTION_BANDS else 24,
                        tts_plugin="edge_kokoro_tts", tts_locale=args.locale,
                        scenes=[{"id": "s01", "plugin": style, "narration": narration or title}])
 

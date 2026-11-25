@@ -16,7 +16,7 @@ from .schema import SAMPLE_RATE, AudioTrackSpec, CaptionBlock, SceneTiming, Word
 from .text_utils import word_key
 
 DANGLING = frozenset("a o as os de do da dos das em e um uma uns umas no na nos nas por para com ao aos que mas".split())
-SENTENCE_END = ".!?…"
+SENTENCE_END = ".!?"
 NAME_PARTICLES = frozenset("da das de do dos del van von e".split())
 NUMBER_WORDS = frozenset(
     "zero um uma dois duas tres quatro cinco seis sete oito nove dez onze doze treze catorze quatorze quinze "
@@ -175,6 +175,8 @@ def _authored_cuts(scenes, words, candidates, frame_count, fps):
     exact = {cut.word_index: cut for cut in candidates}
     cuts = []
     for index, offset in enumerate(list(accumulate(map(len, groups)))[:-1]):
+        if not _ends_sentence(words[offset - 1].text):
+            raise ValueError(f"A cena {scenes[index].id!r} precisa terminar em ponto, ! ou ?.")
         candidate = exact.get(offset)
         if not candidate:
             # A script boundary can fall between two presentation frames. Keep the
@@ -197,9 +199,7 @@ def _script_cuts(scenes, words, candidates, frame_count, fps):
     exact = _authored_cuts(scenes, words, candidates, frame_count, fps)
     if exact is not None:
         return exact
-    after_sentences = [cut for cut in candidates if cut.sentence]
-    if len(after_sentences) >= count:
-        candidates = after_sentences
+    candidates = [cut for cut in candidates if cut.sentence]
     if len(candidates) < count:
         raise ValueError("A faixa não tem fronteiras seguras suficientes para as cenas do roteiro.")
     cuts = []
@@ -208,8 +208,7 @@ def _script_cuts(scenes, words, candidates, frame_count, fps):
         stop = len(candidates) - (count - index - 1)
 
         def cost(candidate):
-            return (abs(candidate.word_index - target) - min(.40, candidate.pause)
-                    - (.18 if candidate.sentence else 0))
+            return abs(candidate.word_index - target) - min(.40, candidate.pause)
 
         position = min(range(start, stop), key=lambda i: cost(candidates[i]))
         cuts.append(candidates[position])
@@ -314,8 +313,11 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
                 raise
             spoken_words = _verified_words(words, spoken_text, duration)
             words = _verified_words(spoken_words, reference_text, duration, minimum_match=0)
+    if words and not _ends_sentence(words[-1].text):
+        last = words[-1]
+        words = (*words[:-1], replace(last, text=last.text.rstrip(",;:…") + "."))
     frame_count = (samples * spec.fps + SAMPLE_RATE - 1) // SAMPLE_RATE
-    candidates = _boundaries(words, spec.fps, frame_count)
+    candidates = [cut for cut in _boundaries(words, spec.fps, frame_count) if cut.sentence]
     caption_safe = [cut for cut in candidates if word_key(words[cut.word_index - 1].text) not in DANGLING]
     if len(caption_safe) >= (1 if auto_scenes else len(spec.scenes) - 1):
         candidates = caption_safe

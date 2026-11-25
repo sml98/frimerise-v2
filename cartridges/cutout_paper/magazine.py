@@ -11,9 +11,10 @@ from pydantic import BaseModel, Field, model_validator
 from core.color_grade import LutName, grade_photo, lut_name
 from core.cutout_matting import matting_model, remove_background
 from core.media_fetcher import fetch_image
+from core.motion import ease_in_out_cubic, ease_out_back, visual_cues
 from core.text_utils import fit_text
 
-from .paper_fx import DISPLAY, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, paper_card, stamp, tape
+from .paper_fx import DISPLAY, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, edge_textures, paper_card, stamp, tape_card_corner
 
 class Photo(BaseModel):
     media_query: str = Field(min_length=1, max_length=220)
@@ -56,7 +57,7 @@ class MagazineOptions(BaseModel):
 
 @dataclass(frozen=True)
 class Piece:
-    art: Image.Image
+    textures: tuple[Image.Image, ...]
     label: Image.Image | None
 
 
@@ -128,7 +129,8 @@ def prepare_magazine(stage, options, seed):
     width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
     mode = options.module
     lut = options.lut or "vintage_paper_warm"
-    multipliers = {"photo_cutout": (.79, .84), "newspaper_clipping": (.53, .69), "collage_board": (.41, .48)}
+    hero_limit = (.94, .99) if stage.vertical else (.79, .84)
+    multipliers = {"photo_cutout": hero_limit, "newspaper_clipping": (.53, .69), "collage_board": (.41, .48)}
     lim = tuple(max(8, round(size * factor)) for size, factor in zip((width, height), multipliers[mode], strict=True))
     lookups = options.photos if mode == "collage_board" else [Photo(
         media_query=options.media_query, media_source=options.media_source,
@@ -142,7 +144,7 @@ def prepare_magazine(stage, options, seed):
             continue
         art, model = _copy(source, lut, lim, seed + index)
         label = _tag(lookup.label, max(20, round(width * .37)), seed + index)
-        pieces.append(Piece(art, label))
+        pieces.append(Piece(edge_textures(art, seed + index), label))
         models.append(model)
     clipping, underline = (_newspaper(options, max(30, round(width * .55)), max(48, round(height * .88)), seed)
                            if mode == "newspaper_clipping" else (None, ()))
@@ -150,9 +152,8 @@ def prepare_magazine(stage, options, seed):
     return Magazine(bounds, tuple(pieces), tuple(dict.fromkeys(models)), lut if models else None, clipping, underline, badge)
 
 
-def _arrive(at, start, span=.19):
-    p = min(1, max(0, (at - start) / span))
-    return 1 - (1 - p) ** 3
+def _arrive(at, start, span=.65):
+    return ease_out_back((at - start) / span)
 
 
 def _arrow(draw, a, b, p, unit):
@@ -164,21 +165,34 @@ def _arrow(draw, a, b, p, unit):
                   fill=RED, width=max(1, unit // 112))
 
 
-def draw_magazine(layer, magazine, mode, progress, beat, place):
+def draw_magazine(layer, magazine, mode, at, duration, place):
     left, top, right, bottom = magazine.bounds
     width, height = right - left, bottom - top
 
     def xy(x, y):
         return left + width * x, top + height * y
 
+    cues = visual_cues(duration)
+    emphasis = cues[0] if cues else duration * .32
+    secondary = cues[1] if len(cues) > 1 else duration * .59
+    clipping_bounds = None
     if magazine.clipping is not None:
         news = magazine.clipping.copy()
-        strokes = magazine.underline[:1 + int(_arrive(progress, .25, .23) * (len(magazine.underline) - 1))]
-        if len(strokes) > 1:
+        segments = max(0, len(magazine.underline) - 1)
+        span = ease_in_out_cubic((at - emphasis) / .73) * segments
+        count = int(span)
+        strokes = magazine.underline[:count + 1]
+        if count < segments:
+            first, end = magazine.underline[count:count + 2]
+            strokes += (tuple(a + (b - a) * (span - count) for a, b in zip(first, end, strict=True)),)
+        if span > 0:
             draw = ImageDraw.Draw(news)
             draw.line([(x, y - 2) for x, y in strokes], fill="#d89b55", width=max(3, width // 48))
             draw.line(strokes, fill=RED, width=max(2, width // 115))
-        place(layer, news, xy(.28, .49), angle=3, bounds=magazine.bounds)
+        center, scale = place(layer, news, xy(.28, .49), angle=3,
+                              scale=.97 + .03 * _arrive(at, 0), bounds=magazine.bounds)
+        dx, dy = news.width * scale * .41, news.height * scale * .43
+        clipping_bounds = (round(center[0] - dx), round(center[1] - dy), round(center[0] + dx), round(center[1] + dy))
 
     if mode == "photo_cutout":
         slots = ((.50, .45, -4),)
@@ -189,24 +203,30 @@ def draw_magazine(layer, magazine, mode, progress, beat, place):
     else:
         slots = ((.24, .37, 6), (.76, .31, -8), (.53, .71, 3))
 
+    silhouettes = Image.new("RGBA", layer.size)
+    labels = []
     for index, ((x, y, lean), piece) in enumerate(zip(slots, magazine.pieces, strict=True)):
-        start = .055 + index * .17
-        arrive = _arrive(progress, start)
-        if piece is None or arrive == 0:
+        start = -.20 if not index else (emphasis if index == 1 else secondary)
+        if piece is None or at < start:
             continue
+        arrive = _arrive(at, start)
         if index and magazine.pieces[index - 1] is not None:
             last_x, last_y, _ = slots[index - 1]
             _arrow(ImageDraw.Draw(layer), xy((last_x * 2 + x) / 3, last_y),
-                   xy((last_x + x * 2) / 3, y), _arrive(progress, start - .06, .11), width)
-        sway = sin(beat / 12 * tau * .68 + index)
-        center, shrink = place(layer, piece.art, xy(x + .065 * (1 - arrive), y + .045 * (1 - arrive) + sway * .008),
-                               angle=lean + sway * 1.25, scale=.84 + .16 * arrive, bounds=magazine.bounds)
-        tape_width = max(14, round(piece.art.width * shrink * .30))
-        place(layer, tape(tape_width, -12 + index * 8, 21 + index),
-              (center[0], center[1] - piece.art.height * shrink * .40), bounds=magazine.bounds)
-        if piece.label:
-            place(layer, piece.label, (center[0], center[1] + piece.art.height * shrink * .48),
-                  angle=lean / 2, bounds=magazine.bounds)
-    if magazine.board_stamp and progress > .53:
-        pop = _arrive(progress, .53, .11)
+                   xy((last_x + x * 2) / 3, y), ease_in_out_cubic((at - start) / .65), width)
+        sway = sin(at * tau * .68 + index)
+        art = piece.textures[int(at * 12) % len(piece.textures)]
+        center, shrink = place(silhouettes, art,
+                               xy(x + .11 * (1 - arrive), y + .055 * (1 - arrive) + sway * .011),
+                               angle=lean + sway * 1.5, scale=.64 + .36 * arrive, bounds=magazine.bounds)
+        if piece.label and (mode != "photo_cutout" or at >= secondary):
+            labels.append((piece.label, (center[0], center[1] + art.height * shrink * .48), lean / 2))
+    if clipping_bounds is not None:
+        blocked = silhouettes.getbbox()
+        tape_card_corner(layer, clipping_bounds, max(12, width // 10), blocked=(blocked,) if blocked else (), seed=21)
+    layer.alpha_composite(silhouettes)
+    for label, center, angle in labels:
+        place(layer, label, center, angle=angle, bounds=magazine.bounds)
+    if magazine.board_stamp and at > secondary:
+        pop = _arrive(at, secondary, .35)
         place(layer, magazine.board_stamp, xy(.79, .86), angle=-6, scale=1.16 - .16 * pop, bounds=magazine.bounds)

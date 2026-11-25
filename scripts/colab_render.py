@@ -155,6 +155,9 @@ def main():
         expected.add(credits.name)
     if {path.name for path in artifacts.iterdir() if path.is_file() and path.stat().st_size} != expected:
         raise RuntimeError("O render precisa gerar um MP4, três keyframes PNG e o relatório de áudio.")
+    qc = output.with_name(f"{output.stem}_qc")
+    if not all((qc / name).is_file() for name in ("qa_grid.png", "relatorio_qc_blindagem.json")):
+        raise RuntimeError("O render precisa gerar o relatório e o painel do gate de QC.")
 
     drive = f"{metadata['remote']}:FrimeRise_Exports/{episode.stem}"
     rclone = ("rclone", "--config", str(config))

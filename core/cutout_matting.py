@@ -16,7 +16,8 @@ CPU_URL = ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/"
            "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx")
 GPU_MODEL = "ZhengPeng7/BiRefNet"
 GPU_REVISION = "e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4"
-APPROVED_MODELS = frozenset((CPU_MODEL, GPU_MODEL))
+MODEL_LICENSES = {CPU_MODEL: "MIT", GPU_MODEL: "MIT"}
+APPROVED_MODELS = frozenset(MODEL_LICENSES)
 
 
 def _device(requested):
@@ -113,7 +114,8 @@ def matting_model(path):
     """Read the approved model recorded in a generated RGBA PNG."""
     with Image.open(path) as image:
         name = image.info.get("matting_model")
-    if name not in APPROVED_MODELS:
+        license_name = image.info.get("matting_license")
+    if name not in APPROVED_MODELS or license_name != MODEL_LICENSES[name]:
         raise ValueError("O PNG não identifica um modelo BiRefNet aprovado")
     return name
 
@@ -139,7 +141,7 @@ def remove_background(image_path, device="auto") -> Path:
             raise ValueError("BiRefNet não encontrou um sujeito visível na imagem")
         info = PngImagePlugin.PngInfo()
         info.add_text("matting_model", model)
-        info.add_text("matting_license", "MIT")
+        info.add_text("matting_license", MODEL_LICENSES[model])
         with TemporaryDirectory(dir=root) as directory:
             stage = Path(directory) / output.name
             subject.save(stage, pnginfo=info)
