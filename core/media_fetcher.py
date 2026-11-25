@@ -10,7 +10,7 @@ import sqlite3
 import subprocess
 from contextlib import closing, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isfinite
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,13 +20,19 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageOps
 
+from . import broll_selector
+
 HEADERS = {"User-Agent": "FrimeRise/2.0 (editorial video renderer)"}
 PIXABAY = "https://pixabay.com/api/"
 COMMONS = "https://commons.wikimedia.org/w/api.php"
 PEXELS = "https://api.pexels.com/v1/videos/search"
 ARCHIVE = "https://archive.org"
 TIMEOUT = 7
+MAX_REEL_SEC = 2400
+LOCAL_SOURCE = "Arquivo local (Google Flow / próprio)"
 _credits = ContextVar("media_credits", default=None)
+_assets = ContextVar("media_assets_root", default=None)
+_semantic_cpu = ContextVar("media_semantic_cpu", default=False)
 
 
 @dataclass(frozen=True)
@@ -222,58 +228,37 @@ def _download(url, path, limit):
     return size > 0
 
 
-def _clip(source, output, start, duration, *, remote=False):
-    network = ["-rw_timeout", "8000000", "-seekable", "1"] if remote else []
-    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", *network, "-ss", str(start), "-i", str(source),
+def _clip(source, output, start, duration):
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", str(start), "-i", str(source),
                     "-t", str(duration), "-map", "0:v:0", "-an", "-sn", "-dn",
-                    "-vf", "scale=960:960:force_original_aspect_ratio=decrease:force_divisible_by=2",
+                    "-vf", "fps=30,scale=960:960:force_original_aspect_ratio=decrease:force_divisible_by=2",
                     "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-crf", "22",
                     "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)],
                    capture_output=True, check=True, timeout=55)
 
 
-def _range_endpoint(url):
-    request = Request(url, headers={**HEADERS, "Range": "bytes=0-1"})
-    with urlopen(request, timeout=TIMEOUT) as response:
-        if response.status == 206 and response.headers.get("Content-Range", "").startswith("bytes 0-1/"):
-            return response.geturl()
-    return None
+def _video_probe(path):
+    data = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
+         "-of", "json", str(path)], capture_output=True, check=True, timeout=12,
+    )
+    info = json.loads(data.stdout)
+    stream = info["streams"][0]
+    return stream["width"], stream["height"], float(info["format"]["duration"])
 
 
-def _checked_asset(candidate, stage, video, orientation, max_duration, start):
+def _checked_asset(candidate, stage, video, orientation, max_duration):
     raw = stage / "download"
     result = stage / f"asset{candidate.extension}"
     for url in candidate.urls:
         try:
-            if candidate.source.startswith("Internet Archive"):
-                origin = _range_endpoint(url)
-                if not origin:
-                    continue
-                _clip(origin, result, start, max_duration, remote=True)
-                raw = result
-            elif not _download(url, raw, 40_000_000 if video else 16_000_000):
+            if not _download(url, raw, 256_000_000 if video else 16_000_000):
                 continue
             if video:
-                data = subprocess.run(
-                    ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                     "stream=width,height:format=duration", "-of", "json", str(raw)],
-                    capture_output=True, check=True, timeout=12,
-                )
-                probe = json.loads(data.stdout)
-                stream = probe["streams"][0]
-                duration = float(probe["format"]["duration"])
-                if not isfinite(duration) or duration <= 0 or not _oriented(stream["width"], stream["height"], orientation):
+                width, height, duration = _video_probe(raw)
+                if not 0 < duration <= max_duration or not _oriented(width, height, orientation):
                     continue
-                if raw != result:
-                    if start >= duration:
-                        continue
-                    if start or duration > max_duration + .05:
-                        result = stage / "clip.mp4"
-                        _clip(raw, result, start, max_duration)
-                    else:
-                        raw.replace(result)
-                if result.stat().st_size < 1024:
-                    continue
+                raw.replace(result)
             else:
                 with Image.open(raw) as image:
                     image = ImageOps.exif_transpose(image)
@@ -301,12 +286,16 @@ def media_credit(path):
 
 
 @contextmanager
-def capture_media_credits():
+def capture_media_credits(*, assets_root=None, semantic_cpu=False):
     credits = []
     token = _credits.set(credits)
+    root = _assets.set(assets_root)
+    semantic = _semantic_cpu.set(semantic_cpu)
     try:
         yield credits
     finally:
+        _semantic_cpu.reset(semantic)
+        _assets.reset(root)
         _credits.reset(token)
 
 
@@ -330,25 +319,31 @@ def write_media_credits(path, credits):
             credit += f" · trecho a partir de {item.get('start_sec', 0):g} s"
         license_url = item.get("license_url")
         license_link = f" · [Licença](<{license_url}>)" if license_url else ""
-        lines.append(f"- [{title}](<{item['url']}>) · {credit}{license_link}")
+        label = f"[{title}](<{item['url']}>)" if item.get("url") else title
+        lines.append(f"- {label} · {credit}{license_link}")
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _fetch(query, source, orientation, *, video=False, limit=0, start=0):
+def _cache_root():
+    return Path(os.environ.get("FRIMERISE_MEDIA_CACHE", ".cache/media")).resolve()
+
+
+def _key_for(options):
+    return hashlib.sha256(json.dumps(options, ensure_ascii=False).encode()).hexdigest()
+
+
+def _save_credit(path, credit):
+    path.write_text(json.dumps(credit, ensure_ascii=False), encoding="utf-8")
+
+
+def _fetch(query, source, orientation, *, video=False, limit=0):
     if not isinstance(query, str) or not query.strip():
         return None
     if source not in {"auto", "pixabay", "pexels", "archive", "wikimedia"} or orientation not in {None, "vertical", "horizontal"}:
         return None
     query = " ".join(query.split())
-    if video:
-        limit = int(limit) if int(limit) == limit else limit
-        start = int(start) if int(start) == start else start
-    cache_key = [query.casefold(), source, orientation, video, limit]
-    if video:
-        cache_key += [start, "trim-v1"]
-    fingerprint = json.dumps(cache_key, ensure_ascii=False)
-    key = hashlib.sha256(fingerprint.encode()).hexdigest()
-    cache = Path(os.environ.get("FRIMERISE_MEDIA_CACHE", ".cache/media")).resolve()
+    key = _key_for([query.casefold(), source, orientation, video, limit])
+    cache = _cache_root() / "reels" if video else _cache_root()
     sources = {"pixabay": _pixabay, "wikimedia": _commons, "pexels": _pexels, "archive": _archive}
     if source != "auto":
         order = (source,)
@@ -365,24 +360,24 @@ def _fetch(query, source, orientation, *, video=False, limit=0, start=0):
             for suffix in ((".mp4", ".webm", ".ogv") if video else (".jpg",)):
                 path = cache / (key + suffix)
                 if path.is_file() and path.stat().st_size:
-                    return _record(path)
+                    return path if video else _record(path)
             for provider in order:
                 try:
                     for candidate in sources[provider](query, video, orientation, limit):
                         with TemporaryDirectory(dir=cache) as directory:
                             stage = Path(directory)
-                            asset = _checked_asset(candidate, stage, video, orientation, limit, start)
+                            asset = _checked_asset(candidate, stage, video, orientation, limit)
                             if asset is None:
                                 continue
                             target = cache / (key + asset.suffix)
                             credit = stage / "credit.json"
-                            credit.write_text(json.dumps({"source": candidate.source, "author": clean_author(candidate.author),
-                                                          "license": candidate.license, "url": candidate.page,
-                                                          "title": candidate.title, "license_url": candidate.license_url,
-                                                          "type": "video" if video else "image", "start_sec": start},
-                                                         ensure_ascii=False), encoding="utf-8")
+                            _save_credit(credit, {"source": candidate.source, "author": clean_author(candidate.author),
+                                                  "license": candidate.license, "url": candidate.page,
+                                                  "title": candidate.title, "license_url": candidate.license_url,
+                                                  "type": "video" if video else "image", "start_sec": 0})
                             credit.replace(target.with_suffix(".json"))
-                            return _record(asset.replace(target))
+                            asset.replace(target)
+                            return target if video else _record(target)
                 except (OSError, URLError, ValueError, TypeError, KeyError):
                     # Provider exceptions can include the full API URL, including its key.
                     continue
@@ -391,13 +386,55 @@ def _fetch(query, source, orientation, *, video=False, limit=0, start=0):
     return None
 
 
-def fetch_image(query, source="auto", orientation="horizontal"):
-    """Return a cached JPEG, or None if no suitable search result is available."""
-    return _fetch(query, source, orientation)
+def local_media_file(value):
+    """Resolve an explicit asset relative to the configured assets root."""
+    path = Path(value).expanduser()
+    path = ((_assets.get() or Path.cwd()) / path).resolve()
+    if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".mp4"} or not path.is_file():
+        raise ValueError(f"media_file precisa apontar para PNG, JPG ou MP4 legível: {path}")
+    return path
 
 
-def fetch_broll(query, source="auto", orientation="horizontal", duration_sec=12, *, start_sec=0, max_duration=None):
-    """Return a cached clip trimmed to the requested duration."""
+def _local_credit(path, kind):
+    return {"source": LOCAL_SOURCE, "title": path.name, "type": kind, "start_sec": 0}
+
+
+def _local_image(path, visual, narration):
+    stat = path.stat()
+    source_id = broll_selector._fingerprint(path, stat.st_size, stat.st_mtime_ns)
+    key = _key_for([source_id, path.name, visual, narration, "local-poster-v1"])
+    cache = _cache_root() / "local"
+    cache.mkdir(parents=True, exist_ok=True)
+    output = cache / f"{key}.png"
+    with output.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not output.is_file():
+            with TemporaryDirectory(dir=cache) as directory:
+                stage = Path(directory) / output.name
+                if path.suffix.lower() == ".mp4":
+                    shot = broll_selector.select_shot(path, visual, narration,
+                                                     device=broll_selector.scoring_device(_semantic_cpu.get()))
+                    _, _, duration = _video_probe(path)
+                    at = min(duration - .04, shot.frame_sec) if shot else duration / 2
+                    broll_selector._ffmpeg("-ss", max(0, at), "-i", path, "-frames:v", "1", "-threads", "1", stage)
+                else:
+                    with Image.open(path) as image:
+                        photo = ImageOps.exif_transpose(image)
+                        photo.thumbnail((1600, 1600))
+                        photo.convert("RGBA" if "A" in photo.getbands() or "transparency" in photo.info else "RGB").save(stage)
+                _save_credit(output.with_suffix(".json"), _local_credit(path, "image"))
+                stage.replace(output)
+    return _record(output)
+
+
+def fetch_image(query="", source="auto", orientation="horizontal", *, media_file=None, visual="", narration=""):
+    """Fetch an image, or use the explicitly supplied local photo or video poster."""
+    return _local_image(local_media_file(media_file), visual, narration) if media_file else _fetch(query, source, orientation)
+
+
+def fetch_broll(query="", source="auto", orientation="horizontal", duration_sec=12, *, start_sec=0,
+                max_duration=None, media_file=None, visual="", narration=""):
+    """Return the best detected shot. Legacy start_sec remains accepted for old callers."""
     if isinstance(source, (int, float)):
         duration_sec, source = source, "auto"
     if max_duration is not None:
@@ -405,4 +442,55 @@ def fetch_broll(query, source="auto", orientation="horizontal", duration_sec=12,
     if (not isinstance(duration_sec, (int, float)) or not 0 < duration_sec <= 60
             or not isinstance(start_sec, (int, float)) or not isfinite(start_sec) or start_sec < 0):
         return None
-    return _fetch(query, source, orientation, video=True, limit=duration_sec, start=start_sec)
+    local = local_media_file(media_file) if media_file else None
+    if local and local.suffix.lower() != ".mp4":
+        return None
+    if not local and not (isinstance(query, str) and query.strip()):
+        return None
+    if local:
+        stat = local.stat()
+        identity = [local.name, broll_selector._fingerprint(local, stat.st_size, stat.st_mtime_ns)]
+    else:
+        identity = [" ".join(query.casefold().split()), source, orientation]
+    key = _key_for([identity, float(duration_sec), visual, narration, broll_selector.INDEX_VERSION,
+                    broll_selector.MODEL_REVISION, "broll-v2"])
+    cache = _cache_root() / "broll"
+    cache.mkdir(parents=True, exist_ok=True)
+    targets = {method: cache / f"{key}-{method}.mp4" for method in ("siglip2", "visual_cpu", "local_original")}
+    with (cache / f"{key}.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if targets["siglip2"].is_file():
+            return _record(targets["siglip2"])
+        device = broll_selector.scoring_device(_semantic_cpu.get())
+        if device == "visual":
+            for method in ("visual_cpu", "local_original"):
+                if targets[method].is_file():
+                    return _record(targets[method])
+        reel = local or _fetch(query, source, orientation, video=True, limit=MAX_REEL_SEC)
+        if not reel:
+            return None
+        try:
+            chosen = broll_selector.select_shot(reel, visual, narration, duration_sec=duration_sec, device=device)
+            if chosen is None and not local:
+                return None
+            if chosen is not None:
+                selection = asdict(chosen)
+            else:
+                _, _, duration = _video_probe(reel)
+                selection = {"start_sec": 0, "end_sec": min(duration, duration_sec), "method": "local_original", "score": None}
+            output = targets[selection["method"]]
+            if output.is_file():
+                return _record(output)
+            with TemporaryDirectory(dir=cache) as directory:
+                stage = Path(directory) / output.name
+                start, end = selection["start_sec"], selection["end_sec"]
+                _clip(reel, stage, start, end - start)
+                credit = _local_credit(local, "video") if local else media_credit(reel)
+                credit.update(start_sec=start, selection=selection)
+                _save_credit(output.with_suffix(".json"), credit)
+                stage.replace(output)
+            return _record(output)
+        except (OSError, RuntimeError, ValueError, ImportError, subprocess.SubprocessError):
+            if local:
+                raise
+            return None

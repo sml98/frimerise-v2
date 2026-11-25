@@ -1,15 +1,18 @@
-"""JSON-driven photo, newspaper and board compositions for the paper stage."""
+"""JSON-driven photo, film, newspaper and board compositions for the paper stage."""
 
+import subprocess
 from dataclasses import dataclass
 from math import sin, tau
 from pathlib import Path
+from tempfile import TemporaryFile
 from typing import Literal
 
 from PIL import Image, ImageDraw, ImageOps
 from pydantic import BaseModel, Field, model_validator
 
-from core.color_grade import LutName, grade_photo, lut_name
+from core.color_grade import LutName, grade_photo, lut_filter, lut_name
 from core.cutout_matting import matting_model, remove_background
+from core.encoder import FFMPEG
 from core.media_fetcher import fetch_image
 from core.motion import ease_in_out_cubic, ease_out_back, visual_cues
 from core.text_utils import fit_text
@@ -17,15 +20,23 @@ from core.text_utils import fit_text
 from .paper_fx import DISPLAY, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, edge_textures, paper_card, stamp, tape_card_corner
 
 class Photo(BaseModel):
-    media_query: str = Field(min_length=1, max_length=220)
+    media_query: str = Field(default="", max_length=220)
+    media_file: str | None = None
     media_source: Literal["auto", "wikimedia", "pixabay"] = "auto"
     media_orientation: Literal["horizontal", "vertical"] | None = None
     label: str = Field(default="", max_length=60)
+
+    @model_validator(mode="after")
+    def check_source(self):
+        if not (self.media_query or self.media_file):
+            raise ValueError("Cada foto requer media_query ou media_file")
+        return self
 
 
 class MagazineOptions(BaseModel):
     module: Literal["photo_cutout", "newspaper_clipping", "collage_board"] | None = None
     media_query: str = Field(default="", max_length=220)
+    media_file: str | None = None
     media_source: Literal["auto", "wikimedia", "pixabay"] = "auto"
     media_orientation: Literal["horizontal", "vertical"] | None = None
     photo_label: str = Field(default="", max_length=60)
@@ -48,8 +59,8 @@ class MagazineOptions(BaseModel):
     def check_magazine(self):
         if self.module == "collage_board" and not 2 <= len(self.photos) <= 3:
             raise ValueError("collage_board requer duas ou três fotos")
-        if self.module in {"photo_cutout", "newspaper_clipping"} and not self.media_query:
-            raise ValueError(f"{self.module} requer media_query")
+        if self.module in {"photo_cutout", "newspaper_clipping"} and not (self.media_query or self.media_file):
+            raise ValueError(f"{self.module} requer media_query ou media_file")
         if self.module == "newspaper_clipping" and not self.clipping_headline:
             raise ValueError("newspaper_clipping requer clipping_headline")
         return self
@@ -123,7 +134,7 @@ def _newspaper(options, width, height, seed):
     return edge, underline
 
 
-def prepare_magazine(stage, options, seed):
+def prepare_magazine(stage, options, seed, narration=""):
     w, h = stage.size
     bounds = stage.action_inset or (round(w * .10), round(h * .23), round(w * .90), round(h * .76))
     width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
@@ -133,12 +144,16 @@ def prepare_magazine(stage, options, seed):
     multipliers = {"photo_cutout": hero_limit, "newspaper_clipping": (.53, .69), "collage_board": (.41, .48)}
     lim = tuple(max(8, round(size * factor)) for size, factor in zip((width, height), multipliers[mode], strict=True))
     lookups = options.photos if mode == "collage_board" else [Photo(
-        media_query=options.media_query, media_source=options.media_source,
+        media_query=options.media_query, media_file=options.media_file, media_source=options.media_source,
         media_orientation=options.media_orientation, label=options.photo_label,
     )]
+    if mode == "collage_board" and options.media_file:
+        lookups = [lookups[0].model_copy(update={"media_file": options.media_file}), *lookups[1:]]
     pieces, models = [], []
     for index, lookup in enumerate(lookups):
-        source = fetch_image(lookup.media_query, lookup.media_source, lookup.media_orientation)
+        source = fetch_image(lookup.media_query, lookup.media_source, lookup.media_orientation,
+                             **({"media_file": lookup.media_file, "visual": options.headline, "narration": narration}
+                                if lookup.media_file else {}))
         if source is None:
             pieces.append(None)
             continue
@@ -150,6 +165,37 @@ def prepare_magazine(stage, options, seed):
                            if mode == "newspaper_clipping" else (None, ()))
     badge = stamp(options.board_stamp, max(20, round(width * .38)), seed + 9) if options.board_stamp else None
     return Magazine(bounds, tuple(pieces), tuple(dict.fromkeys(models)), lut if models else None, clipping, underline, badge)
+
+
+def film_cards(path, stage, timing, lut, seed):
+    """Decode one graded, mounted film frame per output frame with bounded memory."""
+    if stage.action_inset:
+        left, top, right, bottom = stage.action_inset
+        width, height = round((right - left) * .86), round((bottom - top) * .65)
+    else:
+        width, height = round(stage.size[0] * .66), round(stage.size[1] * .53)
+    pad = max(4, stage.unit // 55)
+    stock = paper_card((width + 2 * pad, height + 2 * pad), IVORY, seed)
+    mat = cutout(stock, border=max(2, pad // 3), seed=seed)
+    offset = ((mat.width - width) // 2, (mat.height - height) // 2)
+    picture = (f"fps={timing.fps},scale={width}:{height}:force_original_aspect_ratio=increase,"
+               f"crop={width}:{height},{lut_filter(lut)}")
+    command = [*FFMPEG, "-v", "error", "-stream_loop", "-1", "-threads", "2", "-i", str(path),
+               "-an", "-filter_threads", "1", "-vf", picture, "-frames:v", str(timing.frame_count),
+               "-threads", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
+    count = width * height * 3
+    with TemporaryFile() as errors, subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors) as process:
+        for _ in range(timing.frame_count):
+            data = process.stdout.read(count)
+            if len(data) != count:
+                errors.seek(0)
+                raise RuntimeError(f"Quadro de media_file incompleto: {errors.read().decode(errors='replace')}")
+            card = mat.copy()
+            card.paste(Image.frombytes("RGB", (width, height), data), offset)
+            yield card
+        if process.wait():
+            errors.seek(0)
+            raise RuntimeError(errors.read().decode(errors="replace"))
 
 
 def _arrive(at, start, span=.65):

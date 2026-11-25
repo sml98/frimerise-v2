@@ -77,12 +77,14 @@ clean_stage() {
     for file in frimerise.db audio-input voice-ref.wav bgm-input rclone.conf job.json repo.bundle runner.py colab-key colab-key.pub; do
         if [[ -f $stage/$file ]]; then unlink -- "$stage/$file"; fi
     done
+    if [[ -d $stage/media-inputs ]]; then rm -r -- "$stage/media-inputs"; fi
     rmdir -- "$stage"
 }
 trap clean_stage EXIT
 python3 - "$db" "$stage" "$episode" "$remote" "$revision" "$aspect" "$gpu" "$audio" "$continuous" "$tts" "$voice" "$workers" "$tts_engine" "$voice_ref" "$bgm" "$denoise" <<'PY'
 import json
 import os
+import shutil
 import sqlite3
 import sys
 from contextlib import closing
@@ -97,6 +99,7 @@ if voice_ref and selected != "voxcpm2_tts":
     sys.exit("--voice-ref requer --tts-engine voxcpm2.")
 backends = (selected, spec.get("tts_fallback_plugin") if not engine else None)
 settings = []
+media_files = {}
 if not audio and "gemini_tts" in backends:
     settings.append("GEMINI_API_KEY")
 for scene in spec.get("scenes", ()):
@@ -104,6 +107,17 @@ for scene in spec.get("scenes", ()):
     sources = [(options, "media"), (options, "broll")]
     sources.extend((photo, "media") for photo in options.get("photos", ()) if isinstance(photo, dict))
     for item, prefix in sources:
+        if media_file := item.get("media_file"):
+            if media_file not in media_files:
+                asset = Path(media_file).expanduser().resolve()
+                if not asset.is_file() or asset.suffix.lower() not in (".png", ".jpg", ".jpeg", ".mp4"):
+                    sys.exit(f"media_file precisa apontar para PNG, JPG ou MP4 legível: {asset}")
+                relative = Path("media-inputs") / str(len(media_files)) / asset.name
+                target = stage / relative
+                target.parent.mkdir(parents=True)
+                shutil.copyfile(asset, target)
+                media_files[media_file] = str(relative)
+            continue
         query = item.get(f"{prefix}_query", "")
         provider = item.get(f"{prefix}_source", "auto")
         if query and not query.lower().startswith(("file:", "archive:")):
@@ -138,6 +152,7 @@ if rows:
                                            "tts-engine": engine, "tts_backend": selected,
                                            "voice_ref": bool(voice_ref), "denoise": bool(denoise),
                                            "bgm": "auto" if bgm == "auto" else "file" if bgm else "",
+                                           "media_files": media_files,
                                            "workers": int(workers) if workers else None}))
 PY
 narration_files=()
@@ -156,6 +171,9 @@ if [[ -n $bgm && $bgm != auto ]]; then
 fi
 if [[ -f $stage/frimerise.db ]]; then
     narration_files+=(frimerise.db)
+fi
+if [[ -d $stage/media-inputs ]]; then
+    narration_files+=(media-inputs)
 fi
 git bundle create "$stage/repo.bundle" HEAD
 git show HEAD:scripts/colab_render.py > "$stage/runner.py"

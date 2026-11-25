@@ -8,8 +8,8 @@ from PIL import Image, PngImagePlugin
 
 from cartridges.cutout_paper import magazine, renderer
 from cartridges.cutout_paper.paper_fx import tape_card_corner
-from cartridges.motion_editorial.renderer import TEMPLATE, Options, composition_payload
-from core import audio_aligner, cutout_matting
+from cartridges.motion_editorial.renderer import TEMPLATE, Options, composition_payload, prepare_media
+from core import audio_aligner, broll_selector, cutout_matting, media_fetcher
 from core.engine import _picture_audit
 from core.encoder import run_ffmpeg
 from core.html_adapter import open_composition
@@ -147,3 +147,91 @@ def test_real_qc_fails_black_frozen_silent_video_and_still_saves_the_grid(tmp_pa
     assert not result["passed"] and not result["frame_0_nonempty"]
     assert all(result["ffmpeg_intervals"][kind] for kind in ("black", "freeze", "silence"))
     assert result["lufs"] is None and grid.is_file() and report_path.is_file()
+
+
+@pytest.fixture(scope="module")
+def test_reel(tmp_path_factory):
+    folder = tmp_path_factory.mktemp("broll")
+    video = folder / "film.mp4"
+    run_ffmpeg("-v", "error", "-filter_complex_threads", "1",
+               "-f", "lavfi", "-i", "smptebars=s=160x90:r=30:d=2.5",
+               "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=3.1",
+               "-f", "lavfi", "-i", "color=black:s=160x90:r=30:d=2.4",
+               "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=3.2,hue=h=135",
+               "-filter_complex", "[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0[out]", "-map", "[out]",
+               "-c:v", "libx264", "-threads", "1", str(video))
+    return video
+
+
+def test_broll_detects_shots_rejects_black_and_static_titles_and_caches_them(test_reel, tmp_path, monkeypatch):
+    index = tmp_path / "index"
+    monkeypatch.setenv("FRIMERISE_BROLL_INDEX", str(index))
+    folder, shots = broll_selector.index_shots(test_reel)
+    assert len(shots) == 2
+    assert [(s.start_sec, s.end_sec) for s in shots] == [(2.5, 5.6), (8.0, 11.2)]
+    assert all((folder / shot.frame).is_file() for shot in shots)
+    (manifest,) = index.glob("*.json")
+    assert len(json.loads(manifest.read_text())["shots"]) == 2
+
+    def unexpected(*_):
+        pytest.fail("O mesmo vídeo foi indexado de novo")
+
+    monkeypatch.setattr(broll_selector, "_index", unexpected)
+    assert broll_selector.index_shots(test_reel) == (folder, shots)
+
+
+def test_broll_cpu_fallback_and_semantic_ranking_keep_cuts_exact(test_reel, tmp_path, monkeypatch):
+    monkeypatch.setenv("FRIMERISE_BROLL_INDEX", str(tmp_path))
+
+    def unavailable(*_):
+        raise ImportError
+
+    monkeypatch.setattr(broll_selector, "_semantic_scores", unavailable)
+    quality = broll_selector.select_shot(test_reel, "Filmagem de arquivo", duration_sec=2.4, device="cpu")
+    assert quality.method == "visual_cpu" and quality.device == "cpu" and quality.model is None
+    assert quality.shot_start_sec <= quality.start_sec < quality.end_sec <= quality.shot_end_sec
+
+    def score(_folder, shots, visual, narration, device):
+        assert len(shots) == 2 and visual == "Pessoas e uma central" and narration == "O sinal chegou."
+        assert device == "cuda"
+        return [.15, .83]
+
+    monkeypatch.setattr(broll_selector, "_semantic_scores", score)
+    choice = broll_selector.select_shot(test_reel, "Pessoas e uma central", "O sinal chegou.", duration_sec=12, device="cuda")
+    assert tuple(choice) == (8.0, 11.2, .83)
+    assert choice.method == "siglip2" and choice.model == broll_selector.MODEL
+
+
+def test_local_media_file_wins_over_search_for_both_cartridges(test_reel, tmp_path, monkeypatch):
+    monkeypatch.setenv("FRIMERISE_MEDIA_CACHE", str(tmp_path / "media"))
+    monkeypatch.setenv("FRIMERISE_BROLL_INDEX", str(tmp_path / "index"))
+    monkeypatch.setenv("FRIMERISE_GRADE_CACHE", str(tmp_path / "grade"))
+    monkeypatch.setattr(broll_selector, "scoring_device", lambda *_: "visual")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("media_file acionou o provedor remoto")
+
+    monkeypatch.setattr(media_fetcher, "_fetch", forbidden)
+    photo = tmp_path / "Flow camisa.png"
+    Image.new("RGBA", (35, 70), (87, 37, 20, 140)).save(photo)
+    with media_fetcher.capture_media_credits(assets_root=tmp_path) as credits:
+        image = media_fetcher.fetch_image("busca ignorada", media_file=photo.name)
+        with Image.open(image) as loaded:
+            assert loaded.getchannel("A").getextrema() == (140, 140)
+        opts = Options(kicker="CAPA", headline="Arquivo local", module="terminal_code", data={"lines": ["ARQUIVO"]},
+                       media_file=str(test_reel), broll_query="arquivo remoto")
+        editorial = prepare_media(opts, "O arquivo apareceu.")
+        assert editorial.video and editorial.selection["method"] == "visual_cpu"
+        assert editorial.video_lut == "editorial_teal_amber"
+        spec = EpisodeSpec("Papel", "cutout_paper", width=180, height=320, aspect_ratio="9:16", fps=30,
+                           scenes=[{"id": "flow", "plugin": "cutout_paper", "narration": "O arquivo apareceu.",
+                                    "media_file": str(test_reel), "media_query": "busca ignorada"}])
+        timing = SceneTiming(AudioTrackSpec(tmp_path / "voice.wav", samples=48000), 0, 30, 30, continuous=True)
+        paper = renderer.render_scene(spec, spec.scenes[0], timing, {})
+        shot = list(paper.frames)
+        assert len(shot) == 30 and shot[0] != shot[-1] and paper.color_luts == ("vintage_paper_warm",)
+        assert paper.broll_selection["source"] == test_reel.name
+    assert all(entry["source"] == "Arquivo local (Google Flow / próprio)" for entry in credits)
+    report = tmp_path / "fontes.md"
+    write_media_credits(report, credits)
+    assert "Arquivo local (Google Flow / próprio)" in report.read_text()

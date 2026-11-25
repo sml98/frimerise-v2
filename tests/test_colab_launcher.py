@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
     (0, "examples/example.json", "9:16", "L4", "external"),
     (0, "examples/example.json", "9:16", "L4", "edge"),
     (0, "examples/example.json", "9:16", "L4", "studio"),
+    (0, "examples/example.json", "16:9", "L4", "media"),
 ])
 def test_shell_transfers_the_revision_and_preserves_failure_while_stopping(
     tmp_path, remote_exit, episode, aspect, gpu, mode,
@@ -28,9 +30,13 @@ def test_shell_transfers_the_revision_and_preserves_failure_while_stopping(
         path = repo / filename
         path.parent.mkdir(exist_ok=True)
         path.write_text("{}\n")
+    if mode == "media":
+        (repo / episode).write_text(json.dumps({"scenes": [{"plugin": "motion_editorial", "media_file": "Flow video.mp4",
+                                                            "broll_query": "remote question"}]}))
+        (repo / "Flow video.mp4").write_bytes(b"untracked media")
     git = ("git", "-C", str(repo))
     subprocess.run([*git, "init", "-q"], check=True)
-    subprocess.run([*git, "add", "--all"], check=True)
+    subprocess.run([*git, "add", "--", episode, "scripts/colab_render.py"], check=True)
     subprocess.run([*git, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "-qm", "fixture"],
                    check=True)
 
@@ -71,6 +77,8 @@ elif args[0] == "ssh":
         expected.add("audio-input" if mode == "external" else "frimerise.db")
     elif mode == "studio":
         expected.update(("voice-ref.wav", "bgm-input"))
+    elif mode == "media":
+        expected.add("media-inputs/0/Flow video.mp4")
     assert set(files) == expected
     assert files["repo.bundle"].startswith(b"# v")
     metadata = json.loads(files["job.json"])
@@ -89,6 +97,9 @@ elif args[0] == "ssh":
         assert metadata["tts_backend"] == "voxcpm2_tts"
         assert metadata["voice_ref"] and metadata["denoise"] and metadata["bgm"] == "file"
         assert files["voice-ref.wav"] == files["bgm-input"] == b"external audio"
+    elif mode == "media":
+        assert metadata["media_files"] == {"Flow video.mp4": "media-inputs/0/Flow video.mp4"}
+        assert files["media-inputs/0/Flow video.mp4"] == b"untracked media"
     else:
         with tempfile.TemporaryDirectory() as temporary:
             db = Path(temporary) / "frimerise.db"
@@ -113,6 +124,8 @@ else:
         args.extend(("--continuous", "--tts", "edge_kokoro_tts", "--workers", "3"))
     elif mode == "studio":
         args.extend(("--tts-engine", "voxcpm2", "--voice-ref", str(audio), "--bgm", str(audio), "--denoise"))
+    elif mode == "media":
+        args.extend(("--tts-engine", "edge"))
     if mode != "gemini":
         env["FRIMERISE_DB"] = str(tmp_path / "missing.db")
     result = subprocess.run([str(launcher), episode, *args], cwd=repo, env=env,

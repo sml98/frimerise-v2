@@ -24,6 +24,7 @@ Escolha `module` nas cenas fotográficas e continue usando `layout` nas cenas il
 - `newspaper_clipping` usa os mesmos campos de foto e aceita `publication`, `clipping_headline`, `clipping_text` e `highlight`. Use `clipping_headline` para o texto principal. Identifique uma reprodução editorial quando a página for composta pelo roteiro.
 - `collage_board` usa `photos` com duas ou três entradas contendo `media_query`, `media_source`, `media_orientation` e `label`. `board_stamp` é o texto do carimbo que fecha a sequência.
 - `lut` aceita os nomes em `assets/luts/`, com ou sem `.cube`. O padrão das fotos deste cartucho é `vintage_paper_warm`. As fontes da mídia ficam no arquivo `*_fontes.md`.
+- `media_file` pode apontar para um PNG, JPG ou MP4 e tem prioridade sobre `media_query`. Uma cena sem `module` trata a foto local como `photo_cutout` e o MP4 como um cartão de vídeo a 30 fps. Os módulos de fotografia usam um quadro representativo quando a fonte é MP4. Em `collage_board`, `photos` também aceita `media_file` por peça.
 
 ## Erros Proibidos (Lições Aprendidas)
 

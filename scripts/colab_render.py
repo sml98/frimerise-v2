@@ -35,6 +35,7 @@ def prepare_denoiser(job, env):
 def render_environment(python, database, continuous):
     env = os.environ.copy()
     env["FRIMERISE_COLAB"] = "1"
+    env["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     if database.is_file():
         env["FRIMERISE_DB"] = str(database)
     if not continuous:
@@ -55,6 +56,27 @@ def render_environment(python, database, continuous):
         installed = python.parents[1].glob("lib/python*/site-packages/nvidia/*/lib")
         env["LD_LIBRARY_PATH"] = os.pathsep.join([*(str(path) for path in installed), *filter(None, initial)])
     return env
+
+
+def _media_options(scene):
+    return {**scene.get("options", {}), **scene}
+
+
+def bind_media_files(spec, job, files):
+    """Rebind explicit assets to the secure Colab staging directory."""
+    if not files:
+        return
+    media_root = job / "media-inputs"
+    for scene in spec.get("scenes", ()):
+        fields = [scene, scene.get("options", {})]
+        for container in fields.copy():
+            fields.extend(item for item in container.get("photos", ()) if isinstance(item, dict))
+        for container in fields:
+            if value := container.get("media_file"):
+                path = (job / files[value]).resolve()
+                if not path.is_relative_to(media_root) or not path.is_file():
+                    raise ValueError("Arquivo media_file ausente da transferência Colab")
+                container["media_file"] = str(path)
 
 
 def main():
@@ -81,9 +103,12 @@ def main():
     episode = Path(metadata["episode"])
     episode_path = repo / episode
     spec = json.loads(episode_path.read_text())
+    media_files = metadata.get("media_files")
+    bind_media_files(spec, job, media_files)
     if aspect := metadata.get("aspect"):
         width, height = {"9:16": (1080, 1920), "16:9": (1920, 1080)}[aspect]
         spec.update(aspect_ratio=aspect, width=width, height=height)
+    if aspect or media_files:
         episode_path = job / episode.name
         episode_path.write_text(json.dumps(spec), encoding="utf-8")
     width, height, fps = (spec.get(key, default) for key, default in (("width", 1920), ("height", 1080), ("fps", 24)))
@@ -110,12 +135,20 @@ def main():
     run(str(python), str(bootstrap), "-q", "--disable-pip-version-check")
     requirements = ["-r", str(repo / "requirements.txt")]
     matting_modules = {"photo_cutout", "newspaper_clipping", "collage_board", "subject_depth_title"}
-    if any(scene.get("module", scene.get("options", {}).get("module")) in matting_modules
-           for scene in spec.get("scenes", ())):
+    scene_options = [_media_options(scene) for scene in spec.get("scenes", ())]
+    if any(options.get("module") in matting_modules or (
+        options.get("plugin") == "cutout_paper" and options.get("media_file")
+        and Path(options["media_file"]).suffix.lower() != ".mp4"
+    ) for options in scene_options):
         requirements.extend(("-r", str(repo / "requirements-matting-colab.txt")))
     if tts_backend == "voxcpm2_tts":
         requirements.extend(("-r", str(repo / "requirements-colab.txt")))
-    elif tts_backend == "kokoro_tts":
+    elif any(options.get("bg_mode") in {"broll_video", "broll_dark"} or any(
+        Path(item.get("media_file") or "").suffix.lower() == ".mp4"
+        for item in (options, *options.get("photos", ())) if isinstance(item, dict)
+    ) for options in scene_options):
+        requirements.extend(("-r", str(repo / "requirements-broll-colab.txt")))
+    if tts_backend == "kokoro_tts":
         requirements.append("kokoro")
     run(str(python), "-m", "pip", "install", "-q", "--disable-pip-version-check", *requirements)
     if any(scene.get("plugin") == "motion_editorial" for scene in spec.get("scenes", ())):

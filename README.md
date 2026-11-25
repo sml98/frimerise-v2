@@ -114,6 +114,14 @@ Para usar os módulos de foto no Ubuntu, instale `python -m pip install -r requi
 
 A coleção `assets/luts/` inclui `editorial_teal_amber`, `vintage_paper_warm` e `doc_clean_neutral`. Gere as tabelas com `python -m core.color_grade`. O tratamento das fotos é cacheado, e o FFmpeg aplica a LUT do B-roll antes de compor o primeiro plano.
 
+#### B-roll semântico e mídia local
+
+`broll_description` descreve o plano desejado. O PySceneDetect separa o filme em planos e indexa até 24 quadros representativos em `.cache/broll_index/`. O seletor descarta planos abaixo de 2 s, pretos ou estáticos. No Colab, o SigLIP 2 cruza a descrição e a fala com os quadros. Na instalação local, brilho, nitidez e movimento classificam os planos. `--audio-report` registra o intervalo selecionado, o método e o score. A seleção usa uma análise a 10 fps e o trecho de saída mantém 30 fps. [PySceneDetect](https://www.scenedetect.com/download/) · [OpenCLIP e pesos SigLIP 2 Apache-2.0](https://huggingface.co/timm/ViT-B-16-SigLIP2-256/tree/fb14461786ff5cd7b18210817522546f28c7143a)
+
+Para usar `--semantic-cpu`, instale primeiro PyTorch e torchvision para CPU e depois `open-clip-torch>=3.2,<4` e `transformers>=4.57,<5` no mesmo ambiente. O seletor usa um frame por lote no CPU e recorre à avaliação visual se não houver memória livre. Os downloads de acervo aproveitam a cópia mais leve encontrada, até 256 MB e 40 minutos por filme.
+
+`media_file` aceita PNG, JPG ou MP4 sem acionar a busca remota para aquele asset. Os caminhos são absolutos ou relativos ao `--assets-root`. O launcher Colab transfere os arquivos referenciados junto ao job, inclusive arquivos locais fora do Git. O render registra a origem própria em `<slug>_fontes.md`.
+
 ```bash
 python -m core.engine examples/teste_colagem_revista.json exports/teste_colagem_revista.mp4 \
   --continuous --bgm auto --audio-report exports/relatorio_passo2.json

@@ -106,6 +106,9 @@ def _picture_audit(renders, timeline):
            "matting_license": "MIT" if models and set(models) <= APPROVED_MODELS else None,
            "license_commercial_safe": bool(models) and set(models) <= APPROVED_MODELS,
            "lut_applied": bool(luts), "luts": luts}
+    selections = [scene.broll_selection for scene in renders if scene.broll_selection is not None]
+    if selections:
+        out["broll_selections"] = selections
     if timeline[0].continuous:
         out["orphan_caption_blocks"] = sum(len(block.words) == 1 for timing in timeline for block in timing.caption_blocks)
     return out
@@ -148,7 +151,7 @@ def _qc_output(final, destination, spec, timeline, reference, report, renders):
 
 def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, continuous=False,
            auto_scenes=False, alignment=None, reference_text=None, workers=None,
-           bgm=None, denoise=False, voice_ref=None, audio_report=None):
+           bgm=None, denoise=False, voice_ref=None, audio_report=None, semantic_cpu=False):
     """Render and audit in a temporary directory before publishing the MP4."""
     discover()
     output = Path(output).absolute()
@@ -175,7 +178,9 @@ def render(spec, output, *, assets_root=Path.cwd(), keyframes=None, audio=None, 
         raise ValueError("--audio-report precisa de um destino próprio.")
     output.parent.mkdir(parents=True, exist_ok=True)
     assets_root = Path(assets_root)
-    with TemporaryDirectory(prefix=".frimerise-", dir=output.parent) as temporary, capture_media_credits() as credits:
+    with TemporaryDirectory(prefix=".frimerise-", dir=output.parent) as temporary, capture_media_credits(
+        assets_root=assets_root, semantic_cpu=semantic_cpu,
+    ) as credits:
         work = Path(temporary)
         source = None
         if continuous:
@@ -289,6 +294,7 @@ def main():
     parser.add_argument("--aspect", choices=("9:16", "16:9"))
     parser.add_argument("--locale", help="speech locale for an audio-only or plain-text episode")
     parser.add_argument("--workers", type=int, help="parallel web scene workers (default: 2 local, 4 on Colab)")
+    parser.add_argument("--semantic-cpu", action="store_true", help="opt into SigLIP 2 on CPU when installed")
     add_audio_arguments(parser)
     args = parser.parse_args()
     automatic = args.episode is None or args.episode.suffix.lower() == ".txt"
@@ -308,7 +314,7 @@ def main():
                              continuous=args.continuous, auto_scenes=automatic or args.auto_scenes,
                              alignment=args.alignment,
                              reference_text=reference, workers=args.workers, bgm=args.bgm, denoise=args.denoise,
-                             voice_ref=args.voice_ref, audio_report=args.audio_report)
+                             voice_ref=args.voice_ref, audio_report=args.audio_report, semantic_cpu=args.semantic_cpu)
     print(json.dumps({"encoder": encoder, **asdict(report)}, indent=2))
 
 

@@ -1,6 +1,5 @@
-# Keep VoxCPM2 on a matched CUDA 12.6 PyTorch stack for the Colab L4.
---extra-index-url https://download.pytorch.org/whl/cu126
-torch==2.8.0+cu126
+# The optional full Colab stack includes open-clip-torch and VoxCPM2.
+-r requirements-broll-colab.txt
 torchaudio==2.8.0+cu126
 torchcodec==0.6.0
 voxcpm==2.0.3

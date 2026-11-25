@@ -47,12 +47,15 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--aspect", choices=FORMATS)
     parser.add_argument("--inspect", type=Path, help="folder for four editorial inspection frames")
+    parser.add_argument("--assets-root", type=Path, default=Path.cwd())
+    parser.add_argument("--semantic-cpu", action="store_true", help="opt into SigLIP 2 on CPU when installed")
     add_audio_arguments(parser)
     args = parser.parse_args()
     spec = with_aspect(EpisodeSpec.from_json(args.episode.read_bytes()), args.aspect)
-    encoder, report = render(audio_overrides(spec, args), args.output, audio=args.audio,
+    encoder, report = render(audio_overrides(spec, args), args.output, audio=args.audio, assets_root=args.assets_root,
                              continuous=args.continuous, alignment=args.alignment, bgm=args.bgm,
-                             denoise=args.denoise, voice_ref=args.voice_ref, audio_report=args.audio_report)
+                             denoise=args.denoise, voice_ref=args.voice_ref, audio_report=args.audio_report,
+                             semantic_cpu=args.semantic_cpu)
     result = {"encoder": encoder, **asdict(report)}
     if args.inspect:
         result["inspection"] = inspect(args.output, args.inspect, spec, report.frame_count)

@@ -10,7 +10,7 @@ from core.audio_aligner import caption_blocks
 from core.color_grade import LutName, grade_photo, lut_name
 from core.cutout_matting import matting_model, remove_background
 from core.html_adapter import render_frames
-from core.media_fetcher import fetch_broll, fetch_image, media_credit
+from core.media_fetcher import fetch_broll, fetch_image, local_media_file, media_credit
 from core.motion import visual_cues
 from core.schema import CaptionBlock, SceneRender
 
@@ -80,9 +80,11 @@ class Options(BaseModel):
     accent: Literal["amber", "emerald", "cyan", "crimson", "violet"] = "amber"
     overlay_fx: Literal["highlight_bar", "stamp_badge", "laser_scan"] | None = None
     media_query: str = Field(default="", max_length=220)
+    media_file: str | None = None
     media_source: Literal["auto", "pixabay", "wikimedia"] = "auto"
     media_orientation: Literal["horizontal", "vertical"] = "horizontal"
     broll_query: str = Field(default="", max_length=220)
+    broll_description: str = Field(default="", max_length=300)
     broll_source: Literal["auto", "pixabay", "pexels", "archive", "wikimedia"] = "auto"
     broll_start_sec: FiniteFloat = Field(default=0, ge=0)
     broll_duration_sec: FiniteFloat = Field(default=12, gt=0, le=60)
@@ -116,8 +118,8 @@ class Options(BaseModel):
             raise ValueError("terminal_code requires one to eight lines of up to 90 characters")
         if self.module in PHOTO_MODULES and not all(0 <= axis <= 1 for axis in self.data.focus):
             raise ValueError("photo focus coordinates must be in [0, 1]")
-        if self.module == "subject_depth_title" and not self.media_query:
-            raise ValueError("subject_depth_title requires media_query")
+        if self.module == "subject_depth_title" and not (self.media_query or self.media_file):
+            raise ValueError("subject_depth_title requires media_query or media_file")
         return self
 
 
@@ -142,8 +144,8 @@ def composition_payload(scene_id, options, timing, media=None):
     blocks = editorial_captions(timing.caption_blocks or caption_blocks(timing.audio.words))
     enter_at, exit_at = transition_times(timing)
     return {
-        **options.model_dump(exclude={"foley", "media_query", "media_source", "media_orientation",
-                                      "broll_query", "broll_source", "broll_start_sec", "broll_duration_sec", "lut"}),
+        **options.model_dump(exclude={"foley", "media_query", "media_file", "media_source", "media_orientation",
+                                      "broll_query", "broll_description", "broll_source", "broll_start_sec", "broll_duration_sec", "lut"}),
         "id": scene_id,
         "durationSec": timing.duration_sec,
         "visualCues": visual_cues(timing.duration_sec),
@@ -168,24 +170,32 @@ class EditorialMedia:
     video_lut: str | None = None
     luts: tuple[str, ...] = ()
     models: tuple[str, ...] = ()
+    selection: dict | None = None
 
 
-def prepare_media(options):
+def prepare_media(options, narration=""):
     media = EditorialMedia()
     depth = options.module == "subject_depth_title"
     video_modes = {"broll_video", "broll_dark"}
-    if options.bg_mode in video_modes and not depth:
+    local = local_media_file(options.media_file) if options.media_file else None
+    description = options.broll_description or options.headline
+    use_video = local.suffix.lower() == ".mp4" if local else options.bg_mode in video_modes
+    if use_video and not depth:
         query = options.broll_query or options.media_query
         source = options.broll_source if options.broll_query else options.media_source
         media.video = fetch_broll(query, source, options.media_orientation, options.broll_duration_sec,
-                                  start_sec=options.broll_start_sec)
+                                  media_file=local, visual=description, narration=narration)
         if media.video:
-            media.payload["videoCredit"] = media_credit(media.video)
-            media.video_lut = options.lut or ("editorial_teal_amber" if options.bg_mode == "broll_video" else None)
-    if options.media_query and (options.module in PHOTO_MODULES or (
-        options.bg_mode in video_modes | {"photo_duotone"} and not media.video
+            credit = media_credit(media.video)
+            media.payload["videoCredit"] = credit
+            if selection := credit.get("selection"):
+                media.selection = {**selection, "source": credit.get("url") or credit.get("title")}
+            media.video_lut = options.lut or ("editorial_teal_amber" if local or options.bg_mode == "broll_video" else None)
+    if (local or options.media_query) and (options.module in PHOTO_MODULES or (
+        (local or options.bg_mode in video_modes | {"photo_duotone"}) and not media.video
     )):
-        photo = fetch_image(options.media_query, options.media_source, options.media_orientation)
+        photo = fetch_image(options.media_query, options.media_source, options.media_orientation,
+                            **({"media_file": local, "visual": description, "narration": narration} if local else {}))
         if photo:
             photo_lut = options.lut or ("editorial_teal_amber" if depth else "doc_clean_neutral")
             media.assets["photo.png"] = grade_photo(photo, photo_lut)
@@ -205,15 +215,16 @@ def render_scene(spec, scene, timing, media):
     if timing.fps != 30 or spec.aspect_ratio not in {"9:16", "16:9"}:
         raise ValueError("motion_editorial uses 30 fps and 9:16 or 16:9")
     options = Options.model_validate(scene.options)
-    resolved = prepare_media(options)
+    resolved = prepare_media(options, scene.narration)
     payload = composition_payload(scene.id, options, timing, resolved.payload)
     if resolved.video:
         payload["bg_mode"] = "broll_video"
-    elif options.bg_mode in {"broll_video", "broll_dark"}:
+    elif options.media_file or options.bg_mode in {"broll_video", "broll_dark"}:
         payload["bg_mode"] = "photo_duotone" if resolved.payload.get("photo") else "grid_glow"
     frame_format = "png" if resolved.video else "jpeg"
     frames = render_frames(TEMPLATE, width=spec.width, height=spec.height, timing=timing, payload=payload,
                            locale=spec.tts_locale or "pt-BR", assets=resolved.assets, frame_format=frame_format)
     return SceneRender(frames, effects(options.foley, options.module or options.visual_type, timing, options.overlay_fx), web=True,
                        frame_format=frame_format, background=resolved.video, background_lut=resolved.video_lut,
-                       matting_models=resolved.models, color_luts=resolved.luts)
+                       matting_models=resolved.models, color_luts=resolved.luts,
+                       broll_selection={"scene": scene.id, **resolved.selection} if resolved.selection else None)

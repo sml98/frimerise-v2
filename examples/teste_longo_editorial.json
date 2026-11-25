@@ -24,7 +24,7 @@
       "bg_mode": "broll_video",
       "broll_query": "archive:Telephon1946",
       "broll_source": "archive",
-      "broll_start_sec": 120,
+      "broll_description": "Filmagem histórica em preto e branco de telefonistas conectando cabos e operando um painel de chaves numa central telefônica.",
       "data": {"context": "ARPANET · 29 DE OUTUBRO DE 1969", "lines": ["ORIGEM        UCLA", "DESTINO       SRI", "ENVIO         LOGIN", "RECEBIDO      LO", "CONEXÃO       INTERROMPIDA"]}
     },
     {
@@ -55,7 +55,7 @@
       "bg_mode": "broll_video",
       "broll_query": "archive:communications_primer",
       "broll_source": "archive",
-      "broll_start_sec": 54,
+      "broll_description": "Filme histórico de telecomunicações mostrando um teletipo imprimindo uma mensagem em papel contínuo, ou um equipamento transmitindo um sinal.",
       "data": {"items": [{"label": "Dividir", "detail": "A mensagem vira pacotes."}, {"label": "Endereçar", "detail": "Cada pacote carrega seu destino."}, {"label": "Encaminhar", "detail": "Os equipamentos compartilham os enlaces."}, {"label": "Reunir", "detail": "O destino recompõe a informação."}]}
     },
     {
@@ -127,7 +127,7 @@
       "bg_mode": "broll_video",
       "broll_query": "archive:electronics_at_work",
       "broll_source": "archive",
-      "broll_start_sec": 150,
+      "broll_description": "Filmagem industrial histórica de técnicos trabalhando com equipamentos eletrônicos, cabos, racks ou painéis de transmissão.",
       "overlay_fx": "laser_scan",
       "data": {"context": "Internet", "items": [{"label": "Celular", "icon": "smartphone"}, {"label": "Redes locais", "icon": "globe"}, {"label": "Operadoras", "icon": "factory"}, {"label": "Servidores", "icon": "package"}, {"label": "Cabos", "icon": "train-front"}, {"label": "Serviços", "icon": "credit-card"}]}
     },

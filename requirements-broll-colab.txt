@@ -1,0 +1,6 @@
+# GPU inference for B-roll selection. The standard local install stays Torch-free.
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.8.0+cu126
+torchvision==0.23.0+cu126
+open-clip-torch>=3.2,<4
+transformers>=4.57,<5

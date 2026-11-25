@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
 from core.audio_master import safe_beat
+from core.media_fetcher import fetch_broll, local_media_file, media_credit
 from core.motion import camera_accents, ease_in_out_cubic, ease_out_back, visual_cues
 from core.schema import SceneRender
 from core.text_utils import fit_text
@@ -20,7 +21,7 @@ from plugins.styles.paint_captions import word_key, word_starts
 
 from . import assets_procedural as art
 from .foley import effects
-from .magazine import MagazineOptions, draw_magazine, prepare_magazine
+from .magazine import MagazineOptions, draw_magazine, film_cards, prepare_magazine
 from .paper_fx import CAPTION, INK, IVORY, RED, SERIF, TYPEWRITER, cutout, paper_card, stamp, tabletop
 
 DRAW_FPS = 12
@@ -547,7 +548,7 @@ def _portrait_stamp(stage, text, frame_age, seed, fps=30):
     return ink, (right - ink.width - ceil(stage.size[0] * .021), round((top + bottom - ink.height) / 2))
 
 
-def _frames(stage, spec, options, scene, timing, seed, external, impact, magazine=None):
+def _frames(stage, spec, options, scene, timing, seed, external, impact, magazine=None, film=None):
     w, h = stage.size
     old = (tabletop(stage.size, options.paper, seed), stage.blank(), stage.blank())
     # Keep the fixed stock cached while positions and articulated poses advance at output fps.
@@ -565,6 +566,9 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
     for index in range(timing.frame_count):
         at = index / timing.fps
         layers = _stage_frame(stage, options, old, external, at * DRAW_FPS, timing.duration_sec, hit_step, pace, magazine)
+        if film is not None:
+            _center_piece(layers[1], next(film), stage.at(.50, .461), angle=-2, scale=_pop(at + .10),
+                          bounds=stage.action_inset)
         camera = _camera(options.camera, at / pace, timing.duration_sec / pace, min(w, h))
         pulse, pan = camera_accents(at, timing.duration_sec)
         zoom, x, y = camera
@@ -595,6 +599,8 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
         if plate.size != (spec.width, spec.height):
             plate = plate.resize((spec.width, spec.height), Image.Resampling.BICUBIC)
         yield plate.tobytes()
+    if film is not None:
+        next(film, None)  # Let FFmpeg report its exit status after sending the last frame.
 
 
 def render_scene(spec, scene, timing, media):
@@ -615,10 +621,24 @@ def render_scene(spec, scene, timing, media):
         external.append((item, art.supplied(path, stage.width(item.width), path.stat().st_mtime_ns)))
     foley = effects(options.foley, timing, impact / timing.fps if impact is not None else None,
                     timing.authored_time(1, reference=REFERENCE_SECONDS))
-    magazine = prepare_magazine(stage, options, seed) if options.module else None
+    local = local_media_file(options.media_file) if options.media_file else None
+    selection = None
+    film = None
+    lut = options.lut or "vintage_paper_warm"
+    if local and not options.module:
+        if local.suffix.lower() == ".mp4":
+            video = fetch_broll(media_file=local, visual=options.headline, narration=scene.narration)
+            film = film_cards(video, stage, timing, lut, seed)
+            credit = media_credit(video)
+            if picked := credit.get("selection"):
+                selection = {"scene": scene.id, **picked, "source": credit["title"]}
+        else:
+            options = options.model_copy(update={"module": "photo_cutout"})
+    magazine = prepare_magazine(stage, options, seed, scene.narration) if options.module else None
+    luts = (lut,) if film is not None else (magazine.lut,) if magazine and magazine.lut else ()
     display = (tuple(text for _, text in _caption_blocks(scene.narration, options.caption_numbers, 49 if stage.vertical else 68))
                if not timing.continuous else None)
-    return SceneRender(_frames(stage, spec, options, scene, timing, seed, external, impact, magazine), foley,
+    return SceneRender(_frames(stage, spec, options, scene, timing, seed, external, impact, magazine, film), foley,
                        impact / timing.fps if impact is not None else None,
                        matting_models=magazine.models if magazine else (),
-                       color_luts=(magazine.lut,) if magazine and magazine.lut else (), caption_texts=display)
+                       color_luts=luts, caption_texts=display, broll_selection=selection)
