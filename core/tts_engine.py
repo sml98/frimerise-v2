@@ -13,26 +13,40 @@ from .registry import TTSUnavailable, get_plugin, register_tts
 from .schema import SAMPLE_RATE, Speech
 from .tts_pronunciation import pronounce
 
-ENGINES = {"edge": "edge_kokoro_tts", "kokoro": "kokoro_tts", "voxcpm2": "voxcpm2_tts"}
+ENGINES = {"edge": "edge_kokoro_tts", "kokoro": "kokoro_tts", "voxcpm2": "voxcpm2_tts",
+           "chatterbox_ptbr": "chatterbox_ptbr"}
 PHONETIC_ENGINES = frozenset((*ENGINES.values(), "gemini_tts"))
+GRAVE_TONES = frozenset({"dark_mystery", "historical_suspense", "historical_documentary", "suspense", "horror"})
 
 
-def synthesize_one(backend, text, *, voice_id, speech_style, output, locale=None, continuous=False, voice_ref=None):
+def default_edge_voice(tone):
+    return "pt-BR-AntonioNeural" if tone in GRAVE_TONES else "pt-BR-FranciscaNeural"
+
+
+def synthesize_one(backend, text, *, voice_id, speech_style, output, locale=None, continuous=False, voice_ref=None,
+                   pronunciation_overrides=None, tone="neutral"):
     synthesize = get_plugin("tts", backend)
     parameters = signature(synthesize).parameters
     options = {"locale": locale} if locale else {}
+    if backend == "edge_kokoro_tts" and tone in GRAVE_TONES and locale in (None, "pt-BR"):
+        voice_id = voice_id or default_edge_voice(tone)
+        if "pitch" in parameters and "rate" in parameters:
+            options.update(pitch="-6Hz", rate="-4%")
     if continuous and "continuous" in parameters:
         options["continuous"] = True
+    if "tone" in parameters:
+        options["tone"] = tone
     if voice_ref is not None:
         if "voice_ref" not in parameters:
             raise ValueError("O backend escolhido não aceita --voice-ref")
         options["voice_ref"] = voice_ref
-    native_default = backend in {"kokoro_tts", "voxcpm2_tts"} or (
+    native_default = backend in {"kokoro_tts", "voxcpm2_tts", "chatterbox_ptbr"} or (
         backend == "edge_kokoro_tts" and (voice_id is None or voice_id.lower().startswith("pt-br-"))
     )
     tts_locale = locale or ("pt-BR" if native_default else None)
-    spoken = pronounce(text, tts_locale) if backend in PHONETIC_ENGINES else text
-    speech = synthesize(spoken, voice_id=voice_id, speech_style=speech_style, output=output, **options)
+    spoken = pronounce(text, tts_locale, pronunciation_overrides) if backend in PHONETIC_ENGINES else text
+    speech = replace(synthesize(spoken, voice_id=voice_id, speech_style=speech_style, output=output, **options),
+                     backend=backend)
     if spoken == text:
         return speech
     words = speech.words
@@ -44,6 +58,14 @@ def synthesize_one(backend, text, *, voice_id, speech_style, output, locale=None
         except ValueError:
             words = ()
     return replace(speech, words=tuple(words), spoken_text=spoken)
+
+
+@register_tts("chatterbox_ptbr")
+def chatterbox_ptbr(text, *, voice_id, speech_style, output, locale=None, continuous=False, voice_ref=None, tone="neutral"):
+    from .tts_plugins.chatterbox_ptbr import synthesize
+
+    return synthesize(text, voice_id=voice_id, speech_style=speech_style, output=output, locale=locale,
+                      continuous=continuous, voice_ref=voice_ref, tone=tone)
 
 
 @register_tts("kokoro_tts")

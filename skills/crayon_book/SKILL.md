@@ -17,6 +17,8 @@ description: Dirigir episódios ilustrados do FrimeRise em terceira pessoa, comp
 
 Use `python -m core.engine episodes/<slug>.json exports/<slug>.mp4 --audio narracao.mp3 --alignment exports/<slug>.json` para manter as cenas escritas e alinhá-las à fala. Para criar cenas pelas pausas, omita o episódio ou forneça um TXT com a fala literal. Use `--continuous --tts edge_kokoro_tts --voice pt-BR-FranciscaNeural` para sintetizar o roteiro inteiro numa tomada. O cartucho recebe os blocos sincronizados e ajusta a virada, as entradas e o movimento à duração medida.
 
+Use `media_file` para colocar uma foto ou um MP4 próprio no lugar da ilustração de uma página. A página mantém título manuscrito, legenda e virada. O caminho é relativo a `--assets-root` ou absoluto.
+
 ## Erros Proibidos (Lições Aprendidas)
 
 - Abra cada página com traços presentes. Anime a 30 fps e reserve 12 Hz ao micro-boil da cera. Em páginas acima de 5 s, distribua mudanças visuais a cada 2,5–3 s e prepare a virada sem cortar a fala.

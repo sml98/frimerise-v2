@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 
 from core.encoder import run_ffmpeg
+from core.music_generator import MusicSelection, adaptive_music, procedural_bed
 from core.schema import SAMPLE_RATE
 from plugins._loudness import MAX_TRUE_PEAK, TARGET_LUFS, measure
 
@@ -33,6 +34,13 @@ class MusicBed:
     path: Path
     duration: float
     beats: tuple[float, ...]
+    method: str = "provided"
+    license: str | None = None
+    bpm: int | None = None
+    musical_key: str | None = None
+    model: str | None = None
+    model_revision: str | None = None
+    text_encoder: str | None = None
 
     def beats_until(self, duration):
         if not self.beats:
@@ -51,43 +59,29 @@ def _write_pcm(output, samples, channels):
         destination.writeframes(pcm.tobytes())
 
 
-def _auto_bed(output):
-    """Compose a sparse 120 BPM loop from oscillators and a seeded brush pulse."""
-    beat_size = SAMPLE_RATE // 2
-    seconds = np.arange(beat_size) / SAMPLE_RATE
-    envelope = (1 - np.exp(-seconds * 190)) * np.exp(-seconds * 11) * np.clip((.5 - seconds) / .035, 0, 1)
-    rng = np.random.default_rng(2026)
-    loop = np.zeros((32 * beat_size, 2), dtype=np.float32)
-    chords = ((48, 55, 60, 64), (45, 52, 57, 60), (41, 48, 53, 57), (43, 50, 55, 59))
-    for index in range(32):
-        pitch = chords[index // 8][index % 4]
-        frequency = 440 * 2 ** ((pitch - 69) / 12)
-        phase = 2 * np.pi * frequency * seconds
-        note = (.27 * np.sin(phase) + .071 * np.sin(2 * phase) + .022 * np.sin(3 * phase)) * envelope
-        brush = rng.normal(0, .115, beat_size) * np.exp(-seconds * 82)
-        pulse = (.20 + .095 * (index % 4 == 0)) * np.sin(
-            2 * np.pi * (55 * seconds + .53 * (1 - np.exp(-34 * seconds)))
-        ) * np.exp(-seconds * 28)
-        start = index * beat_size
-        loop[start:start + beat_size, 0] = note * .88 + .43 * brush + pulse
-        loop[start:start + beat_size, 1] = note + .37 * brush + pulse
-    _write_pcm(output, loop, 2)
-
-
 def probe_duration(path):
     result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                              "-of", "json", str(path)], check=True, capture_output=True, text=True)
     return float(json.loads(result.stdout)["format"]["duration"])
 
 
-def prepare_music(choice, configured, assets_root, work):
+def prepare_music(choice, configured, assets_root, work, *, topic="", tone="neutral", moods=(),
+                  duration_sec=None, studio=False):
+    if studio and choice is None and not configured:
+        choice = "adaptive"
     if choice is None and not configured:
         return None
     if choice == "auto":
         path = work / "studio-bed.wav"
-        _auto_bed(path)
+        procedural_bed(path)
+        selection = MusicSelection(path, "procedural_cc0", "CC0-1.0", 120, "C major")
+    elif choice == "adaptive":
+        selection = adaptive_music(work / "studio-bed.wav", topic=topic, tone=tone, moods=moods,
+                                   duration_sec=duration_sec)
+        path = selection.path
     else:
         path = Path(choice).expanduser().resolve() if choice is not None else (assets_root / configured).resolve()
+        selection = MusicSelection(path, "provided")
     if not path.is_file():
         raise ValueError(f"Trilha inexistente: {path}")
     duration = probe_duration(path)
@@ -103,7 +97,8 @@ def prepare_music(choice, configured, assets_root, work):
         beats = tuple(float(at) for at in times if 0 <= at < duration)
         if len(beats) > 2 and duration - beats[-1] + beats[0] < min(.15, np.median(np.diff(beats)) / 3):
             beats = beats[:-1]
-    return MusicBed(path, duration, beats)
+    return MusicBed(path, duration, beats, selection.method, selection.license, selection.bpm, selection.musical_key,
+                    selection.model, selection.model_revision, selection.text_encoder)
 
 
 def snap_to_beat(t_sec, beats_sec, max_shift=0.15):
@@ -176,42 +171,84 @@ def _denoise_voice(source, output):
     return True
 
 
-def _voice_board():
+def _dasp_compressor():
     try:
-        from pedalboard import Compressor, HighpassFilter, HighShelfFilter, Limiter, LowShelfFilter, Pedalboard
+        import torch
+        from dasp_pytorch import compressor
     except (ImportError, OSError):
         return None
-    return Pedalboard([HighpassFilter(cutoff_frequency_hz=80), LowShelfFilter(cutoff_frequency_hz=140, gain_db=1.5),
-                      HighShelfFilter(cutoff_frequency_hz=6000, gain_db=1.5),
-                      Compressor(threshold_db=-18.0, ratio=3.0, attack_ms=8.0, release_ms=120.0),
-                      Limiter(threshold_db=-1.5)])
+    controls = tuple(torch.tensor([value]) for value in (-18.0, 3.0, 8.0, 120.0, 3.0, 0.0))
+
+    def compress(samples):
+        # Keep FFT work bounded and feed the previous release tail to each block.
+        output = np.empty_like(samples)
+        block, history = 4 * SAMPLE_RATE, SAMPLE_RATE // 2
+        with torch.inference_mode():
+            for start in range(0, len(samples), block):
+                end = min(start + block, len(samples))
+                left = max(0, start - history)
+                chunk = torch.from_numpy(np.ascontiguousarray(samples[left:end].T[None]))
+                treated = compressor(chunk, SAMPLE_RATE, *controls)[0].detach().cpu().numpy().T
+                output[start:end] = treated[start - left:]
+        return output
+
+    return compress
 
 
-def _treat_voice(source, output, board):
+def _compress_rms(samples):
+    hop = SAMPLE_RATE // 100
+    starts = np.arange(0, len(samples), hop)
+    levels = np.mean(samples ** 2, axis=1)
+    powers = np.add.reduceat(levels, starts) / np.diff(np.append(starts, len(samples)))
+    level_db = 10 * np.log10(np.maximum(1e-10, powers))
+    targets = 10 ** (-np.maximum(level_db + 18, 0) * (1 - 1 / 3) / 20)
+    attack, release = np.exp(-.01 / .008), np.exp(-.01 / .120)
+    gain = 1.0
+    smoothed = []
+    for target in targets:
+        smoothing = attack if target < gain else release
+        gain = smoothing * gain + (1 - smoothing) * target
+        smoothed.append(gain)
+    return samples * np.interp(np.arange(len(samples)), starts, smoothed)[:, None]
+
+
+def _treat_voice(source, output, compress):
+    try:
+        from scipy.signal import butter, sosfilt
+    except ImportError:
+        with wave.open(str(source), "rb") as input_wave:
+            samples = input_wave.getnframes()
+        run_ffmpeg("-v", "error", "-i", str(source), "-af",
+                   f"{VOICE_FILTERS},apad=whole_len={samples},atrim=end_sample={samples}",
+                   "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(output))
+        return False
     with wave.open(str(source), "rb") as input_wave:
-        channels, samples = input_wave.getnchannels(), input_wave.getnframes()
-        if board is not None:
-            with wave.open(str(output), "wb") as target:
-                target.setparams(input_wave.getparams())
-                while data := input_wave.readframes(SAMPLE_RATE):
-                    signal = np.frombuffer(data, dtype="<i2").reshape(-1, channels)
-                    audio = (signal.T / 32768).astype(np.float32, order="C")
-                    treated = board(audio, SAMPLE_RATE, reset=False).T
-                    if treated.shape != signal.shape:
-                        raise RuntimeError("Pedalboard alterou a duração da narração")
-                    pcm = np.rint(np.clip(treated, -1, 32767 / 32768) * 32768).astype("<i2")
-                    target.writeframesraw(pcm.tobytes())
-            return
-    run_ffmpeg("-v", "error", "-i", str(source), "-af",
-               f"{VOICE_FILTERS},apad=whole_len={samples},atrim=end_sample={samples}",
-               "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(output))
+        channels = input_wave.getnchannels()
+        if (input_wave.getsampwidth(), input_wave.getframerate()) != (2, SAMPLE_RATE):
+            raise ValueError("O DSP requer WAV PCM 16 bits de 48 kHz.")
+        raw = input_wave.readframes(input_wave.getnframes())
+    samples = np.frombuffer(raw, dtype="<i2").reshape(-1, channels).astype(np.float32) / 32768
+    if not len(samples):
+        _write_pcm(output, samples, channels)
+        return False
+    filtered = sosfilt(butter(2, 80, btype="highpass", fs=SAMPLE_RATE, output="sos"), samples, axis=0)
+    warmth = sosfilt(butter(1, 140, fs=SAMPLE_RATE, output="sos"), filtered, axis=0)
+    air = sosfilt(butter(1, 6000, btype="highpass", fs=SAMPLE_RATE, output="sos"), filtered, axis=0)
+    equalized = (filtered + (10 ** (1.5 / 20) - 1) * (warmth + air)).astype(np.float32)
+    treated = compress(equalized) if compress is not None else _compress_rms(equalized)
+    if treated.shape != samples.shape or not np.isfinite(treated).all():
+        raise RuntimeError("A compressão alterou a duração da narração ou gerou amostras inválidas.")
+    ceiling = 10 ** (-1.5 / 20)
+    _write_pcm(output, np.clip(treated, -ceiling, ceiling), channels)
+    return compress is not None
 
 
 def prepare_voice(timeline, work, denoise=False):
     sources = tuple(dict.fromkeys(timing.audio.path for timing in timeline))
     processed = {}
     cleaned_any = False
-    pedalboard_applied = False
+    dasp_applied = False
+    compress = _dasp_compressor()
     for index, source in enumerate(sources):
         cleaned = work / f"clean-{index}.wav"
         if denoise and _denoise_voice(source, cleaned):
@@ -219,16 +256,43 @@ def prepare_voice(timeline, work, denoise=False):
             cleaned_any = True
         else:
             source_audio = source
-        board = _voice_board()
         output = work / f"studio-voice-{index}.wav"
-        _treat_voice(source_audio, output, board)
+        dasp_applied |= _treat_voice(source_audio, output, compress)
         processed[source] = output
-        pedalboard_applied = board is not None
-    return processed, pedalboard_applied, cleaned_any
+    return processed, dasp_applied, cleaned_any
+
+
+def _pyloudnorm_lufs(path):
+    try:
+        import pyloudnorm
+        import soundfile
+    except ImportError:
+        return None
+    samples, rate = soundfile.read(path)
+    # pyloudnorm requires one full BS.1770 measurement block.
+    if len(samples) < round(rate * .4):
+        return None
+    return float(pyloudnorm.Meter(rate).integrated_loudness(samples))
 
 
 def _sample_at(frame, fps):
     return round(Fraction(frame * SAMPLE_RATE, fps))
+
+
+def music_expression(scenes, timeline):
+    curves = {
+        "tense_low": ".58",
+        "pulse_build": ".68+.77*(n-{start})/{span}",
+        "drop_silence": "0",
+        "resolve": "1.08-.48*(n-{start})/{span}",
+    }
+    parts = []
+    for scene, timing in zip(scenes, timeline, strict=True):
+        start = _sample_at(timing.start_frame, timing.fps)
+        end = _sample_at(timing.start_frame + timing.frame_count, timing.fps)
+        envelope = curves.get(scene.music_mood, "1").format(start=start, span=end - start)
+        parts.append(f"gte(n,{start})*lt(n,{end})*({envelope})")
+    return "+".join(parts)
 
 
 def _mix(spec, timeline, renders, assets_root, output):
@@ -283,9 +347,12 @@ def _mix(spec, timeline, renders, assets_root, output):
     tracks = ["[voice]", *effects]
     if spec.music_track:
         music = f"{input_audio(spec.music_track, loop=True)}{MIX_FORMAT},volume=-20dB,atrim=end_sample={total}"
-        if music_cuts:
-            condition = "+".join(music_cuts)
-            music += f",aeval=exprs='if({condition},0,val(0))|if({condition},0,val(1))':channel_layout=stereo"
+        has_moods = any(scene.music_mood for scene in spec.scenes)
+        if music_cuts or has_moods:
+            gain = music_expression(spec.scenes, timeline) if has_moods else "1"
+            if music_cuts:
+                gain = f"if({'+'.join(music_cuts)},0,{gain})"
+            music += f",aeval=exprs='val(0)*({gain})|val(1)*({gain})':channel_layout=stereo"
         graph.append(f"{music},asetpts=N/SR/TB,{DUCK_BLOCKS},asplit[bed_dry][bed_wet]")
         graph.append(f"[voice]{DUCK_BLOCKS},asplit[voice_mix][duck]")
         graph.append(f"[bed_dry]volume={DUCK_FLOOR}[floor]")
@@ -306,8 +373,10 @@ def master(spec, timeline, renders, assets_root, video, output):
     mix = video.with_name("mix.wav")
     _mix(spec, timeline, renders, assets_root, mix)
     total = _sample_at(timeline[-1].start_frame + timeline[-1].frame_count, spec.fps)
-    target, peak_limit = TARGET_LUFS, MAX_TRUE_PEAK - .7
-    for _ in range(3):
+    ceiling = -1.5 if spec.dynamic_edit or getattr(spec, "production_profile", None) == "studio_sota" else MAX_TRUE_PEAK
+    target, peak_limit = TARGET_LUFS, ceiling - .7
+    measured_lufs = _pyloudnorm_lufs(mix)
+    for attempt in range(3):
         profile = f"I={target:.2f}:TP={peak_limit:.2f}:LRA=11"
         stats = measure(mix, profile)
         if not isfinite(float(stats["input_i"])):
@@ -317,19 +386,24 @@ def master(spec, timeline, renders, assets_root, video, output):
             f"measured_LRA={stats['input_lra']}:measured_thresh={stats['input_thresh']}:"
             f"offset={stats['target_offset']}:linear=true"
         )
+        level_filter = f"loudnorm={settings}"
+        if attempt == 0 and measured_lufs is not None and isfinite(measured_lufs):
+            gain = target - measured_lufs
+            if float(stats["input_tp"]) + gain <= peak_limit:
+                level_filter = f"volume={gain:.6f}dB"
         run_ffmpeg(
             "-v", "error", "-y", "-i", str(video), "-i", str(mix), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-            "-af", f"loudnorm={settings},aresample={SAMPLE_RATE},apad=whole_len={total},"
+            "-af", f"{level_filter},aresample={SAMPLE_RATE},apad=whole_len={total},"
             f"atrim=end_sample={total},afade=t=in:ns={FADE_SAMPLES},"
             f"afade=t=out:ss={max(0, total - FADE_SAMPLES)}:ns={FADE_SAMPLES},asetpts=N/SR/TB",
             "-c:a", "aac", "-b:a", "192k", "-movie_timescale", str(SAMPLE_RATE), "-movflags", "+faststart", str(output),
         )
         encoded = measure(output)
         lufs, peak = float(encoded["input_i"]), float(encoded["input_tp"])
-        if abs(lufs - TARGET_LUFS) <= LUFS_TOLERANCE + 1e-9 and peak <= MAX_TRUE_PEAK:
+        if abs(lufs - TARGET_LUFS) <= LUFS_TOLERANCE + 1e-9 and peak <= ceiling:
             return
         if not isfinite(lufs) or not isfinite(peak):
             break
         target += TARGET_LUFS - lufs
-        peak_limit -= max(0, peak - MAX_TRUE_PEAK + .2)
+        peak_limit -= max(0, peak - ceiling + .2)
     raise ValueError(f"Master outside the audio specification: {lufs} LUFS, {peak} dBTP")

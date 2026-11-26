@@ -23,10 +23,26 @@ Escolha `module` nas cenas fotográficas e continue usando `layout` nas cenas il
 - `photo_cutout` usa `media_query`, `media_source`, `media_orientation` opcional e `photo_label`. Para escolher uma foto específica do Commons, use `media_query: "File:Nome da foto.jpg"` e `media_source: "wikimedia"`.
 - `newspaper_clipping` usa os mesmos campos de foto e aceita `publication`, `clipping_headline`, `clipping_text` e `highlight`. Use `clipping_headline` para o texto principal. Identifique uma reprodução editorial quando a página for composta pelo roteiro.
 - `collage_board` usa `photos` com duas ou três entradas contendo `media_query`, `media_source`, `media_orientation` e `label`. `board_stamp` é o texto do carimbo que fecha a sequência.
+- Para montar uma gravura ou um mapa inteiro em papel, use `layout: "custom"` e `media_query`. Para trocar a imagem por um arquivo local, acrescente `media_file` ao plano.
+- Em `newspaper_clipping`, mantenha foto e texto em regiões distintas. O modo dinâmico mede as caixas de conteúdo no Chromium.
 - `lut` aceita os nomes em `assets/luts/`, com ou sem `.cube`. O padrão das fotos deste cartucho é `vintage_paper_warm`. As fontes da mídia ficam no arquivo `*_fontes.md`.
 - `media_file` pode apontar para um PNG, JPG ou MP4 e tem prioridade sobre `media_query`. Uma cena sem `module` trata a foto local como `photo_cutout` e o MP4 como um cartão de vídeo a 30 fps. Os módulos de fotografia usam um quadro representativo quando a fonte é MP4. Em `collage_board`, `photos` também aceita `media_file` por peça.
 
+## Montagem dinâmica
+
+- Defina `dynamic_edit: true` para auditar diversidade de cor, ritmo, repetição de imagens e área segura. Declare `show_header: true` em até 30% das cenas. O padrão é oculto.
+- Use `action_cutout_puppet` com `setting` (`graveyard_night`, `village_road`, `archive_desk`, `open_field`, `city_street`) e `action` (`walk_to_target`, `inspect_with_lantern`, `dig_or_open`, `flee_run`, `crowd_gather`). Forneça recortes reais em `media_file`, `media_query` ou `photos`. O BiRefNet recorta imagens opacas. Informe uma peça por personagem.
+- Use `full_bleed_macro` com mídia, `focus_x` e `focus_y` normalizados e `mark: "circle"` ou `"underline"`. A ampliação parte de 2,2×. Em `dark_archive`, use `label` para identificação, `photo_label` para o contexto e `lantern_focus: true` quando a luz precisar percorrer a gravura. `evidence_pan` requer duas imagens em `photos`.
+- Use `photo_25d_parallax` para dar profundidade a fotos e gravuras de acervo. Indique `media_file` ou `media_query`, identificação em `headline` e crédito curto em `photo_label`. O cartucho usa DA3 e MI-GAN antes de animar a câmera.
+- Reserve `impact_slam` a cenas de 2–3,5 s medidas. Use `hold_impact_through_sentence: true` com `visual_anchor` quando o cartão de abertura precisar durar até 5,5 s para acompanhar a frase. Use `impact_text` para a cifra ou palavra e deixe o módulo suprimir a legenda.
+- Em suspense histórico, use `tone: "historical_suspense"` ou `"dark_mystery"`. A voz Edge padrão desse perfil é Antonio, com `pitch=-6Hz` e `rate=-4%`. Declare `pronunciation_overrides` no episódio para resolver a pronúncia mantendo a grafia original nas legendas.
+- Escreva em `visual_anchor` um trecho literal da fala e em `visual_description` a ação que a imagem deve mostrar. Para duas cenas manuais consecutivas com o mesmo módulo e ações distintas, declare `allow_consecutive_module: true` na segunda cena e descreva a diferença visual.
+- Use `transition` e `music_mood` por cena. `cut_on_beat` só move o corte quando há uma batida dentro da pausa. `drop_silence` zera só a trilha, mantendo voz e efeitos.
+- `broll_clip` aceita um MP4 local ou um objeto com `query`, `description`, `source` e `duration_sec`. A composição usa FFmpeg e o LUT escolhido. Use `cartridge_override` quando a cena deve escolher outro cartucho.
+- A oclusão das camadas segue `styles/crayon-book/demo/rig.js` do Lemo-Opuscar, revisão `8ca0dd8`, código MIT. A captura por seek usa o adaptador derivado de `packages/engine/src/services/screenshotService.ts` do HyperFrames, revisão `34c7e64`, Apache-2.0. [Referência do rig](https://github.com/lemomo-ai/lemo-opuscar/blob/8ca0dd8/styles/crayon-book/demo/rig.js) · [Licença do adaptador](../../LICENSES/HYPERFRAMES-APACHE-2.0.txt)
+
 ## Erros Proibidos (Lições Aprendidas)
 
+- Use pessoas e animais de acervo no módulo de recortes documentais. Bonecos feitos com primitivas SVG são proibidos. Mantenha a pílula escura com texto off-white e destaque âmbar sobre fac-símiles e páginas carregadas.
 - Coloque fita só no canto de um papel retangular com bounding box livre de pessoas, animais e outros recortes. Use o checkpoint de matting comercial aprovado e deduplique os créditos. Mantenha cada carimbo na faixa reservada no retrato.
 - Comece com arte visível e use novas ações a cada 2,5–3 s em cenas acima de 5 s. Encerre a fala da cena em `.`, `!` ou `?`. Confira legendas com duas ou mais palavras, métricas de áudio e ausência de janelas mortas no relatório e no `qa_grid.png`. [Regras completas](../../AGENTS.md#erros-proibidos-lições-aprendidas)

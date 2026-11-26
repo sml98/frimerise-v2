@@ -12,6 +12,18 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Seconds = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 Dimension = Annotated[StrictInt, Field(ge=2, multiple_of=2)]
 SAMPLE_RATE = 48_000
+Transition = Literal["cut_on_beat", "zoom_punch", "whip_pan", "paper_rip", "flash_cut"]
+MusicMood = Literal["tense_low", "pulse_build", "drop_silence", "resolve"]
+Tone = Literal["neutral", "dark_mystery", "historical_suspense", "historical_documentary", "suspense", "horror"]
+ProductionProfile = Literal["standard", "studio_sota"]
+
+
+@validated_dataclass(config=ConfigDict(extra="forbid"))
+class BrollClip:
+    query: str = ""
+    source: Literal["auto", "archive", "wikimedia", "pixabay", "pexels"] = "auto"
+    duration_sec: Annotated[float, Field(gt=0, le=60)] = 6.0
+    description: str = ""
 
 
 @validated_dataclass(config=ConfigDict(extra="forbid"))
@@ -22,6 +34,22 @@ class SceneSpec:
     pause_after_sec: Seconds = 0.35
     cut_music_for_punchline: StrictBool = False
     options: dict[str, Any] = field(default_factory=dict)
+    cartridge_override: Text | None = None
+    broll_clip: Text | BrollClip | None = None
+    transition: Transition | None = None
+    music_mood: MusicMood | None = None
+    suppress_captions: StrictBool = False
+    visual_anchor: Text | None = None
+    visual_description: Text | None = None
+    allow_consecutive_module: StrictBool = False
+
+    @property
+    def style(self) -> str:
+        return self.cartridge_override or self.plugin
+
+    @property
+    def captions_hidden(self) -> bool:
+        return self.suppress_captions or self.options.get("module") == "impact_slam"
 
     @model_validator(mode="before")
     @classmethod
@@ -60,12 +88,18 @@ class EpisodeSpec:
     transcriber_plugin: Text = "whisper"
     export_shorts_clips: StrictBool = False
     audio_mode: Literal["scene", "continuous"] = "scene"
+    dynamic_edit: StrictBool = False
+    pronunciation_overrides: dict[Text, Text] = field(default_factory=dict)
+    tone: Tone = "neutral"
+    production_profile: ProductionProfile = "standard"
 
     @model_validator(mode="after")
     def validate_episode(self) -> "EpisodeSpec":
         across, down = map(int, self.aspect_ratio.split(":"))
         if self.width * down != self.height * across:
             raise ValueError("width and height must match aspect_ratio")
+        if self.production_profile == "studio_sota" and self.fps != 30:
+            raise ValueError("studio_sota usa 30 fps")
         if len({scene.id for scene in self.scenes}) != len(self.scenes):
             raise ValueError("scene IDs must be unique")
         return self
@@ -107,6 +141,10 @@ class Speech:
     words: tuple[WordTiming, ...] = ()
     locale: str | None = field(default=None, kw_only=True)
     spoken_text: str | None = field(default=None, kw_only=True)
+    voice_id: str | None = field(default=None, kw_only=True)
+    pitch: str | None = field(default=None, kw_only=True)
+    rate: str | None = field(default=None, kw_only=True)
+    backend: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +166,8 @@ class SceneTiming:
     caption_blocks: tuple[CaptionBlock, ...] = ()
     continuous: bool = False
     beats_sec: tuple[float, ...] = field(default=(), kw_only=True)
+    beat_cut: bool = field(default=False, kw_only=True)
+    visual_cue_at: float | None = field(default=None, kw_only=True)
 
     @property
     def start_sec(self) -> float:
@@ -169,6 +209,9 @@ class SceneRender:
     color_luts: tuple[str, ...] = field(default=(), kw_only=True)
     caption_texts: tuple[str, ...] | None = field(default=None, kw_only=True)
     broll_selection: dict[str, Any] | None = field(default=None, kw_only=True)
+    layout_audit: dict[str, Any] | None = field(default=None, kw_only=True)
+    image_ids: tuple[str, ...] = field(default=(), kw_only=True)
+    depth_parallax: dict[str, Any] | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

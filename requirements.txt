@@ -8,7 +8,7 @@ faster-whisper>=1.2,<2
 av<19
 playwright==1.65.2
 scenedetect-headless>=0.7.3,<0.8
-pedalboard>=0.9,<1
+scipy>=1.13,<2
 librosa>=0.11,<0.12
 pyloudnorm>=0.1,<1
 pytest>=8,<10

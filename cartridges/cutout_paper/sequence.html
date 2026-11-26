@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:Barlow;src:url('/_media/barlow.ttf')}
+@font-face{font-family:CourierPaper;src:url('/_media/courier.ttf')}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+#root{position:absolute;inset:0;overflow:hidden;background:#1f2024;color:#f8e9c8;
+ --accent:#f4b06c;--ink:#541b17;--signal:#d2352f;--paper:#e9d6b1;font-family:Barlow,sans-serif}
+#root.light{background:#a97f55;color:#271e18}#art,.fill{position:absolute;inset:0;width:100%;height:100%}
+svg{display:block} .stock{filter:drop-shadow(.7vmin 1.4vmin 1vmin #100a06aa)}
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.15;mix-blend-mode:soft-light}
+#mast{position:absolute;top:6%;left:8%;right:8%;text-align:center}
+#mast strong{display:inline-block;color:#271d16;background:#eedcb7;padding:.1em .42em;
+ font:700 5.0vmin Georgia,serif;box-shadow:.4vmin .58vmin #26130b74;transform:rotate(-1deg)}
+#cap{position:absolute;left:9%;right:9%;bottom:17.5%;margin:0;text-align:center;text-wrap:balance;
+ font-size:5.6vmin;line-height:1.13;color:#F5EFE6;text-shadow:0 .04em .08em #100c0a}
+#cap .active{color:#F0B44C}
+#cap .surface{display:inline-block;background:rgba(14,12,10,.84);backdrop-filter:blur(4px);
+ border-radius:.32em;padding:.12em .34em}
+.proof{position:absolute;left:8%;right:8%;top:17%;bottom:30%;display:grid;gap:4%;grid-template-rows:46% 50%}
+.proof figure{position:relative;margin:0;min-height:0;background:#35191a8c;
+ clip-path:polygon(1% 0,98% 2%,100% 95%,2% 100%,0 35%)}
+.proof figure img{position:absolute;inset:8%;width:84%;height:84%;object-fit:contain;display:block}
+.proof article{overflow:visible;min-height:0;padding:4% 6%;position:relative;background:#f1dcad;color:#281c16;
+ box-shadow:.6vmin 1.1vmin #3e272562;background-image:repeating-linear-gradient(0deg,transparent 0 8px,#93805f19 9px 10px)}
+.proof header{font:700 2.8vmin CourierPaper,monospace;letter-spacing:.08em;text-transform:uppercase}
+.proof h1{margin:.08em 0 .07em;font:700 7.1vmin/.94 Georgia,serif;text-wrap:balance}
+.proof p{font:3.6vmin/1.12 Georgia,serif;margin:.27em 0}
+.proof .note{display:inline-block;position:relative;font:700 3.0vmin CourierPaper,monospace;transform:rotate(-2deg)}
+.proof .note svg{position:absolute;left:0;bottom:-.2em;width:100%;height:.42em}
+.hero{position:absolute;left:12%;right:12%;top:16%;height:54%;margin:0;display:grid;place-items:center}
+.hero img{width:100%;height:100%;object-fit:contain;min-height:0}
+#root.dark .hero{left:16%;right:16%;top:20%;height:45%}
+#root.dark .hero img{filter:drop-shadow(0 0 1.7vmin #edb46a5c);height:97%}
+.archive-label{position:absolute;top:9%;left:9%;right:9%;text-align:center;color:#f5deae;
+ font-size:6.4vmin;line-height:1;text-shadow:0 .1em .22em #130d0b}
+.note-label{position:absolute;top:70.5%;left:12%;right:12%;text-align:center;color:#f5deae;
+ font:700 2.65vmin CourierPaper,monospace;text-shadow:0 .1em .18em #130d0b}
+.lantern-hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+ background:radial-gradient(ellipse at var(--lamp-x,35%) var(--lamp-y,50%),#ffc9754e 1%,transparent 26%,#0c0a0bec 65%);}
+.actor{position:absolute;width:41%;height:49%;left:29.5%;top:19%;margin:0;transform-origin:50% 100%}
+.actor img{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom}
+.evidence-photo{position:absolute;width:43%;height:25%;object-fit:contain;background:#201619;outline:.75vmin solid #e4cc9b}
+.evidence-a{top:18%;left:10%;transform:rotate(-6deg)}.evidence-b{top:43%;right:10%;transform:rotate(6deg)}
+#impact{position:absolute;top:25%;bottom:27%;left:9%;right:9%;display:grid;align-content:center;justify-items:center;
+ color:#fff1c8;text-align:center;filter:drop-shadow(.9vmin 1.2vmin #1c1114)}
+#impact h1{max-width:100%;margin:0;font-size:var(--impact-size,21vmin);line-height:.85;white-space:pre-line;
+ letter-spacing:.016em;text-shadow:.06em .04em #59251b;-webkit-text-stroke:.023em #59251b}
+#impact .sub{font:700 3.1vmin CourierPaper,monospace;letter-spacing:.17em;margin-top:1.4em}
+@media (orientation:landscape){
+ #cap{left:18%;right:18%;bottom:8%;font-size:4.7vmin}#mast strong{font-size:4.7vmin}
+ .proof{grid-template-rows:1fr;grid-template-columns:46% 48%;top:20%;bottom:24%}
+ .proof h1{font-size:6.5vmin}.hero{top:14%;height:59%}
+}
+</style>
+</head>
+<body><div id="root"><div id="art" data-edit-stage></div><div id="mast"></div>
+<div id="cap" data-qc-text="legenda" data-qc-require-caption-surface></div></div>
+<script src="sequence.js"></script></body>
+</html>

@@ -1,0 +1,178 @@
+{
+  "title": "O vampiro de 1725",
+  "niche_skill": "cutout_paper",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "aspect_ratio": "9:16",
+  "dynamic_edit": true,
+  "audio_mode": "continuous",
+  "tts_locale": "pt-BR",
+  "tts_plugin": "edge_kokoro_tts",
+  "voice_id": "pt-BR-FranciscaNeural",
+  "tts_fallback_plugin": null,
+  "pronunciation_overrides": {
+    "Habsburgo": "Hábsburgo",
+    "Frombald": "Frômbalt",
+    "Blagojević": "Blagóiévitch",
+    "vampyri": "vampíri"
+  },
+  "scenes": [
+    {
+      "plugin": "cutout_paper",
+      "narration": "Nove mortos em oito dias — e todos apontaram o mesmo cadáver.",
+      "transition": "cut_on_beat",
+      "music_mood": "tense_low",
+      "pause_after_sec": 0,
+      "module": "action_cutout_puppet",
+      "setting": "graveyard_night",
+      "action": "walk_to_target",
+      "headline": "Nove mortos em oito dias",
+      "id": "s01",
+      "media_source": "wikimedia",
+      "media_query": "File:A Man and a Woman Crossing a Stream MET DP876205.jpg"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "O nome era Petar Blagojević.",
+      "transition": "flash_cut",
+      "music_mood": "pulse_build",
+      "pause_after_sec": 0.18,
+      "module": "impact_slam",
+      "impact_text": "9 MORTES",
+      "label": "1725",
+      "headline": "Nove mortes",
+      "id": "s02"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "A aldeia ficava perto do Danúbio, em terras administradas pelos Habsburgo.",
+      "transition": "whip_pan",
+      "music_mood": "tense_low",
+      "pause_after_sec": 0,
+      "module": "evidence_pan",
+      "headline": "A fronteira dos Habsburgo",
+      "photos": [
+        {
+          "media_query": "File:Exactissima Tabula qua tam Danubii Fluvii Pars Inferior.jpg",
+          "media_source": "wikimedia"
+        },
+        {
+          "media_query": "File:Plan de Belgrade - btv1b59641672 (1 of 2).jpg",
+          "media_source": "wikimedia"
+        }
+      ],
+      "id": "s03"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "A viúva disse que ele pediu sapatos.",
+      "transition": "paper_rip",
+      "music_mood": "tense_low",
+      "pause_after_sec": 0,
+      "module": "photo_cutout",
+      "headline": "O relato da viúva",
+      "media_query": "File:Shoes MET 2014.500ab B.jpg",
+      "media_source": "wikimedia",
+      "id": "s04"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "O funcionário Frombald registrou os relatos e pediu aos moradores que esperassem.",
+      "transition": "zoom_punch",
+      "music_mood": "pulse_build",
+      "pause_after_sec": 0.33,
+      "module": "newspaper_clipping",
+      "headline": "O funcionário imperial",
+      "show_header": true,
+      "publication": "Reconstituição editorial",
+      "clipping_headline": "A ordem de Belgrado",
+      "clipping_text": "A aldeia pediu licença para abrir a sepultura.",
+      "highlight": "A ESPERA",
+      "media_query": "File:Plan de Belgrade - btv1b59641672 (1 of 2).jpg",
+      "media_source": "wikimedia",
+      "id": "s05"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "Frombald foi ao cemitério com um sacerdote.",
+      "transition": "cut_on_beat",
+      "music_mood": "tense_low",
+      "pause_after_sec": 0,
+      "module": "action_cutout_puppet",
+      "headline": "A caminho do cemitério",
+      "setting": "graveyard_night",
+      "action": "inspect_with_lantern",
+      "id": "s06",
+      "media_source": "wikimedia",
+      "media_query": "File:Man met een lantaarn, RP-P-1882-A-5277.jpg"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "Sem autorização de Belgrado, os moradores abriram a cova antes da chegada de Frombald.",
+      "transition": "paper_rip",
+      "music_mood": "drop_silence",
+      "pause_after_sec": 0.53,
+      "module": "dark_archive",
+      "headline": "Sem esperar",
+      "media_file": "media/diarium_1725.jpg",
+      "media_query": "Wienerisches Diarium July 1725 facsimile",
+      "id": "s07"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "O corpo parecia pouco alterado, escreveu Frombald.",
+      "transition": "zoom_punch",
+      "music_mood": "tense_low",
+      "pause_after_sec": 0,
+      "module": "action_cutout_puppet",
+      "headline": "A sepultura aberta",
+      "setting": "graveyard_night",
+      "action": "dig_or_open",
+      "id": "s08",
+      "media_source": "wikimedia",
+      "media_query": "File:A Peasant with a Shovel MET DP876200.jpg"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "Em julho, um jornal de Viena publicou o relato. Na página aparecia a palavra vampyri.",
+      "transition": "whip_pan",
+      "music_mood": "pulse_build",
+      "pause_after_sec": 0.16,
+      "module": "full_bleed_macro",
+      "headline": "Viena · 21 de julho de 1725",
+      "show_header": true,
+      "focus_x": 0.51,
+      "focus_y": 0.52,
+      "mark": "underline",
+      "media_file": "media/diarium_1725.jpg",
+      "media_query": "Wienerisches Diarium July 1725 facsimile",
+      "id": "s09"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "O caso atravessou fronteiras pela imprensa.",
+      "transition": "cut_on_beat",
+      "music_mood": "resolve",
+      "pause_after_sec": 0,
+      "broll_clip": "media/newspaper_press.mp4",
+      "cartridge_override": "motion_editorial",
+      "headline": "A notícia circula",
+      "archive_label": "NEWSPAPER STORY · ACERVO PRELINGER",
+      "lut": "editorial_teal_amber",
+      "id": "s10"
+    },
+    {
+      "plugin": "cutout_paper",
+      "narration": "O jornal preservou o medo de uma aldeia. A causa das mortes ficou sem resposta.",
+      "transition": "flash_cut",
+      "music_mood": "resolve",
+      "pause_after_sec": 0,
+      "module": "dark_archive",
+      "headline": "A causa ficou sem resposta",
+      "media_query": "File:Varneythevampire.jpg",
+      "media_source": "wikimedia",
+      "id": "s11"
+    }
+  ]
+}

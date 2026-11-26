@@ -16,6 +16,29 @@ def run_ffmpeg(*args):
     return result.stderr
 
 
+def video_rgb_frames(path, size, fps, count, *, filters=None):
+    """Decode a fitted source or loop a short clip over the requested frame count."""
+    width, height = size
+    picture = (f"fps={fps},scale={width}:{height}:force_original_aspect_ratio=increase,"
+               f"crop={width}:{height}")
+    if filters:
+        picture += f",{filters}"
+    command = [*FFMPEG, "-v", "error", "-stream_loop", "-1", "-threads", "2", "-i", str(path),
+               "-an", "-filter_threads", "1", "-vf", picture, "-frames:v", str(count),
+               "-threads", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
+    frame_bytes = width * height * 3
+    with TemporaryFile() as errors, subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors) as process:
+        for _ in range(count):
+            data = process.stdout.read(frame_bytes)
+            if len(data) != frame_bytes:
+                errors.seek(0)
+                raise RuntimeError(f"Quadro de media_file incompleto: {errors.read().decode(errors='replace')}")
+            yield data
+        if process.wait():
+            errors.seek(0)
+            raise RuntimeError(errors.read().decode(errors="replace"))
+
+
 def select_encoder(width, height, fps):
     candidates = [("h264_nvenc", [], ["-pix_fmt", "yuv420p", "-preset", "p4"])]
     for device in sorted(Path("/dev/dri").glob("renderD*")):

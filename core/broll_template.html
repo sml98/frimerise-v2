@@ -1,0 +1,34 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8">
+<style>
+html,body{margin:0;overflow:hidden;font-family:Arial,sans-serif;color:#fff4d4}
+main{position:absolute;inset:0;background:linear-gradient(180deg,#0e080c7a,transparent 25%,transparent 58%,#10090d96)}
+#source{position:absolute;top:7%;left:9%;right:9%;font:bold 2.6vmin monospace;letter-spacing:.08em;text-shadow:0 2px 6px #1c0d08}
+#caption{position:absolute;left:9%;right:9%;bottom:17.5%;text-align:center;font:bold 5vmin/1.14 Arial,sans-serif;
+ color:#F5EFE6;text-shadow:0 2px 4px #170e0a;text-wrap:balance}
+#caption b{color:#F0B44C}
+#caption .surface{display:inline-block;background:rgba(14,12,10,.84);backdrop-filter:blur(4px);
+ border-radius:.32em;padding:.12em .34em}
+@media (orientation:landscape){#caption{bottom:8%;left:18%;right:18%}}
+</style>
+<main><div id="source" data-qc-text="fonte do B-roll"></div></main>
+<div id="caption" data-qc-text="legenda" data-qc-require-caption-surface></div>
+<script>
+const source=document.querySelector("#source");
+const caption=document.querySelector("#caption");
+window.__renderAt=(t,model)=>{
+ source.textContent=model.label;
+ caption.replaceChildren();
+ const group=model.caption.find(b=>t>=b.start && t<b.end);
+ if (!group) return;
+ const surface=document.createElement("span");
+ surface.className="surface";
+ surface.setAttribute("data-qc-caption-surface","");
+ for(const [i,word] of group.words.entries()){
+   if(i) surface.append(" ");
+   const node=document.createElement(t>=word.start && t<word.end?"b":"span");
+   node.textContent=word.text;
+   surface.append(node);
+ }
+ caption.append(surface);
+};
+</script></html>

@@ -49,6 +49,7 @@ class Options(MagazineOptions):
     layout: Literal["map", "field", "expedition", "routes", "portrait", "custom"] = "custom"
     paper: Literal["kraft", "newsprint"] = "kraft"
     headline: str = ""
+    show_header: bool = False
     label: str = ""
     camera: Literal["zoom_in_slow", "pan_right", "static_punch", "zoom_out_subtle", "zoom_in_end", "static"] = "static"
     stamp: str = ""
@@ -58,6 +59,14 @@ class Options(MagazineOptions):
     foley: list[Foley] = Field(default_factory=lambda: ["paper_slide", "stamp_hit"])
     cutouts: list[ExternalCutout] = Field(default_factory=list)
     caption_numbers: dict[str, str] = Field(default_factory=dict)
+    setting: Literal["graveyard_night", "village_road", "archive_desk", "open_field", "city_street"] = "graveyard_night"
+    action: Literal["walk_to_target", "inspect_with_lantern", "dig_or_open", "flee_run", "crowd_gather"] = "walk_to_target"
+    focus_x: Coordinate = .5
+    focus_y: Coordinate = .5
+    mark: Literal["circle", "underline"] = "circle"
+    impact_text: str = ""
+    hold_impact_through_sentence: bool = False
+    lantern_focus: bool = False
 
 
 def drawing_step(frame, fps):
@@ -488,7 +497,7 @@ def _stage_frame(stage, options, old, external, step, duration, impact_step, pac
     action_step = step / pace
     layers = tuple(layer.copy() for layer in old)
     if magazine is not None:
-        draw_magazine(layers[1], magazine, options.module, at, duration, _center_piece)
+        draw_magazine(layers[1], magazine, options.module or "illustration", at, duration, _center_piece)
     elif options.layout == "map":
         _intro(stage, layers, t, action_step)
     elif options.layout == "field":
@@ -500,7 +509,7 @@ def _stage_frame(stage, options, old, external, step, duration, impact_step, pac
     elif options.layout == "portrait":
         _portrait(stage, layers, t, action_step, duration / pace)
     fg = layers[2]
-    if not stage.vertical:
+    if not stage.vertical and options.show_header:
         for image, pos in _header(stage, options):
             fg.alpha_composite(image, (pos[0] - round(stage.unit * .085 * (1 - _ease(t / .39))), pos[1]))
     for item, image in external:
@@ -555,12 +564,14 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
     old = tuple(layer.copy() for layer in old)
     if magazine is None:
         _pinned_background(stage, old, options.layout)
-    if timing.continuous:
+    if scene.captions_hidden:
+        captions = ()
+    elif timing.continuous:
         captions = tuple((block.start_sec, *_caption_panel(stage, block.text)) for block in timing.caption_blocks)
     else:
         captions = tuple(_captions(stage, scene.narration, timing.audio, options.caption_numbers))
     starts = tuple(caption[0] for caption in captions)
-    header = _portrait_header(stage, options) if stage.vertical else ()
+    header = _portrait_header(stage, options) if stage.vertical and options.show_header else ()
     hit_step = impact * DRAW_FPS / timing.fps if impact is not None else None
     pace = timing.authored_time(1, reference=REFERENCE_SECONDS)
     for index in range(timing.frame_count):
@@ -604,7 +615,15 @@ def _frames(stage, spec, options, scene, timing, seed, external, impact, magazin
 
 
 def render_scene(spec, scene, timing, media):
+    from .sequence import BROWSER_MODULES, render_sequence
+
     options = Options.model_validate(scene.options)
+    if options.module == "photo_25d_parallax":
+        from .photo_25d import render_photo_25d
+
+        return render_photo_25d(spec, scene, timing, options)
+    if options.module in BROWSER_MODULES or spec.dynamic_edit and options.module in {"newspaper_clipping", "photo_cutout"}:
+        return render_sequence(spec, scene, timing, options)
     scale = min(1, 960 / max(spec.width, spec.height))
     stage = Stage((max(96, round(spec.width * scale)), max(96, round(spec.height * scale))))
     seed = crc32(scene.id.encode())
@@ -625,6 +644,7 @@ def render_scene(spec, scene, timing, media):
     selection = None
     film = None
     lut = options.lut or "vintage_paper_warm"
+    illustration = not options.module and options.layout == "custom" and bool(options.media_query)
     if local and not options.module:
         if local.suffix.lower() == ".mp4":
             video = fetch_broll(media_file=local, visual=options.headline, narration=scene.narration)
@@ -632,9 +652,9 @@ def render_scene(spec, scene, timing, media):
             credit = media_credit(video)
             if picked := credit.get("selection"):
                 selection = {"scene": scene.id, **picked, "source": credit["title"]}
-        else:
+        elif not illustration:
             options = options.model_copy(update={"module": "photo_cutout"})
-    magazine = prepare_magazine(stage, options, seed, scene.narration) if options.module else None
+    magazine = prepare_magazine(stage, options, seed, scene.narration) if options.module or (illustration and film is None) else None
     luts = (lut,) if film is not None else (magazine.lut,) if magazine and magazine.lut else ()
     display = (tuple(text for _, text in _caption_blocks(scene.narration, options.caption_numbers, 49 if stage.vertical else 68))
                if not timing.continuous else None)

@@ -304,7 +304,7 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
     duration = samples / SAMPLE_RATE
     if reference_text is None:
         reference_text = " ".join(scene.narration for scene in spec.scenes)
-    words = _sanitize(transcribe_words(wav, spec.tts_locale, initial_prompt=reference_text or None), duration)
+    words = _sanitize(transcribe_words(wav, spec.tts_locale, initial_prompt=spoken_text or reference_text or None), duration)
     if reference_text:
         try:
             words = _verified_words(words, reference_text, duration)
@@ -343,3 +343,43 @@ def align_audio(spec, source: Path, work: Path, *, auto_scenes=False, reference_
             text = " ".join(word.text for word in local) or seed.narration
             scenes.append(replace(seed, id=f"s{index + 1:02d}", narration=text, pause_after_sec=0.0))
     return (replace(spec, scenes=scenes) if auto_scenes else spec), timeline
+
+
+def add_authored_pauses(timeline, scenes, output):
+    """Insert whole-frame silence at measured, sentence-safe boundaries of a single take."""
+    if not any(scene.pause_after_sec for scene in scenes):
+        return timeline
+    result = []
+    added_frames = added_samples = copied = 0
+    with wave.open(str(timeline[0].audio.path)) as source, wave.open(str(output), "wb") as target:
+        target.setparams(source.getparams())
+        stride = source.getnchannels() * source.getsampwidth()
+        for index, (timing, scene) in enumerate(zip(timeline, scenes, strict=True)):
+            voice = timing.audio
+            end = voice.start_sample + voice.samples
+            pause_frames = round(scene.pause_after_sec * timing.fps)
+            pause_samples = round((timing.start_frame + timing.frame_count + added_frames + pause_frames)
+                                  * SAMPLE_RATE / timing.fps) - round(
+                                      (timing.start_frame + timing.frame_count + added_frames) * SAMPLE_RATE / timing.fps
+                                  )
+            if pause_frames and index + 1 < len(timeline):
+                last = max((word.end_sec for word in voice.words), default=0) + timing.start_sec
+                following = timeline[index + 1]
+                first = min((word.start_sec for word in following.audio.words), default=0) + following.start_sec
+                earliest, latest = ceil(last * SAMPLE_RATE), floor(first * SAMPLE_RATE)
+                if earliest > latest:
+                    raise ValueError(f"Cena {scene.id}: a pausa pedida cruzaria uma palavra.")
+                split = min(latest, max(earliest, end))
+            else:
+                split = end
+            target.writeframesraw(source.readframes(split - copied))
+            target.writeframesraw(bytes(pause_samples * stride))
+            copied = split
+            result.append(replace(timing, start_frame=timing.start_frame + added_frames,
+                                  frame_count=timing.frame_count + pause_frames,
+                                  audio=replace(voice, path=output, start_sample=voice.start_sample + added_samples,
+                                                samples=voice.samples + pause_samples)))
+            added_frames += pause_frames
+            added_samples += pause_samples
+        target.writeframesraw(source.readframes(source.getnframes() - copied))
+    return result

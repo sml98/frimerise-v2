@@ -217,13 +217,16 @@ def render_scene(spec, scene, timing, media):
     options = Options.model_validate(scene.options)
     resolved = prepare_media(options, scene.narration)
     payload = composition_payload(scene.id, options, timing, resolved.payload)
+    if scene.captions_hidden:
+        payload["captions"] = []
     if resolved.video:
         payload["bg_mode"] = "broll_video"
     elif options.media_file or options.bg_mode in {"broll_video", "broll_dark"}:
         payload["bg_mode"] = "photo_duotone" if resolved.payload.get("photo") else "grid_glow"
     frame_format = "png" if resolved.video else "jpeg"
     frames = render_frames(TEMPLATE, width=spec.width, height=spec.height, timing=timing, payload=payload,
-                           locale=spec.tts_locale or "pt-BR", assets=resolved.assets, frame_format=frame_format)
+                           locale=spec.tts_locale or "pt-BR", assets=resolved.assets, frame_format=frame_format,
+                           transition=scene.transition)
     return SceneRender(frames, effects(options.foley, options.module or options.visual_type, timing, options.overlay_fx), web=True,
                        frame_format=frame_format, background=resolved.video, background_lut=resolved.video_lut,
                        matting_models=resolved.models, color_luts=resolved.luts,

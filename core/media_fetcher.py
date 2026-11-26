@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageOps
 
-from . import broll_selector
+from . import broll_selector, semantic_broll
 
 HEADERS = {"User-Agent": "FrimeRise/2.0 (editorial video renderer)"}
 PIXABAY = "https://pixabay.com/api/"
@@ -31,8 +31,11 @@ TIMEOUT = 7
 MAX_REEL_SEC = 2400
 LOCAL_SOURCE = "Arquivo local (Google Flow / próprio)"
 _credits = ContextVar("media_credits", default=None)
+_scene_images = ContextVar("scene_images", default=None)
 _assets = ContextVar("media_assets_root", default=None)
 _semantic_cpu = ContextVar("media_semantic_cpu", default=False)
+_semantic_shot_ids = ContextVar("media_semantic_shot_ids", default=None)
+_public_domain_only = ContextVar("media_public_domain_only", default=False)
 
 
 @dataclass(frozen=True)
@@ -51,11 +54,16 @@ def _key(name="PIXABAY_API_KEY"):
     value = os.environ.get(name, "").strip()
     if value:
         return value
-    path = Path(os.environ.get("FRIMERISE_DB", "frimerise.db")).expanduser().resolve()
+    return database_setting(os.environ.get("FRIMERISE_DB", "frimerise.db"), name)
+
+
+def database_setting(path, name):
+    """Read a single setting without creating or modifying the SQLite database."""
+    path = Path(path).expanduser().resolve()
     try:
         with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as database:
             row = database.execute("SELECT value FROM settings WHERE upper(key) = ? LIMIT 1",
-                                   (name,)).fetchone()
+                                   (name.upper(),)).fetchone()
     except sqlite3.Error:
         return ""
     return row[0].strip() if row and isinstance(row[0], str) else ""
@@ -286,20 +294,39 @@ def media_credit(path):
 
 
 @contextmanager
-def capture_media_credits(*, assets_root=None, semantic_cpu=False):
+def capture_media_credits(*, assets_root=None, semantic_cpu=False, public_domain_only=False, semantic_broll=False):
     credits = []
     token = _credits.set(credits)
     root = _assets.set(assets_root)
     semantic = _semantic_cpu.set(semantic_cpu)
+    shots = _semantic_shot_ids.set(set() if semantic_broll else None)
+    domain = _public_domain_only.set(public_domain_only)
     try:
         yield credits
     finally:
+        _public_domain_only.reset(domain)
+        _semantic_shot_ids.reset(shots)
         _semantic_cpu.reset(semantic)
         _assets.reset(root)
         _credits.reset(token)
 
 
+@contextmanager
+def capture_scene_images():
+    images = {}
+    token = _scene_images.set(images)
+    try:
+        yield images
+    finally:
+        _scene_images.reset(token)
+
+
 def _record(path):
+    images = _scene_images.get()
+    if images is not None and Path(path).suffix.lower() in {".png", ".jpg", ".jpeg"}:
+        if path not in images:
+            with Path(path).open("rb") as image:
+                images[path] = hashlib.file_digest(image, "sha256").hexdigest()
     credits = _credits.get()
     if credits is not None:
         entry = media_credit(path)
@@ -309,9 +336,12 @@ def _record(path):
 
 
 def write_media_credits(path, credits):
-    if not credits:
+    path = Path(path)
+    if not credits and not path.is_file():
         return
     lines = ["# Créditos da mídia usada no render", ""]
+    if not credits:
+        lines.append("Nenhuma mídia externa foi usada.")
     for item in credits:
         title = (item.get("title") or item.get("source", "")).replace("[", "\\[").replace("]", "\\]")
         credit = " · ".join(filter(None, (item["source"], clean_author(item.get("author")), item.get("license"))))
@@ -321,7 +351,7 @@ def write_media_credits(path, credits):
         license_link = f" · [Licença](<{license_url}>)" if license_url else ""
         label = f"[{title}](<{item['url']}>)" if item.get("url") else title
         lines.append(f"- {label} · {credit}{license_link}")
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _cache_root():
@@ -342,7 +372,9 @@ def _fetch(query, source, orientation, *, video=False, limit=0):
     if source not in {"auto", "pixabay", "pexels", "archive", "wikimedia"} or orientation not in {None, "vertical", "horizontal"}:
         return None
     query = " ".join(query.split())
-    key = _key_for([query.casefold(), source, orientation, video, limit])
+    options = [query.casefold(), source, orientation, video, limit]
+    domain_only = _public_domain_only.get()
+    key = _key_for([*options, "public-domain"] if domain_only else options)
     cache = _cache_root() / "reels" if video else _cache_root()
     sources = {"pixabay": _pixabay, "wikimedia": _commons, "pexels": _pexels, "archive": _archive}
     if source != "auto":
@@ -353,6 +385,8 @@ def _fetch(query, source, orientation, *, video=False, limit=0):
         order = ("wikimedia",)
     else:
         order = ("pixabay", "pexels", "archive", "wikimedia") if video else ("pixabay", "wikimedia")
+    if domain_only:
+        order = tuple(provider for provider in order if provider in {"wikimedia", "archive"})
     try:
         cache.mkdir(parents=True, exist_ok=True)
         with (cache / f"{key}.lock").open("a") as lock:
@@ -364,6 +398,11 @@ def _fetch(query, source, orientation, *, video=False, limit=0):
             for provider in order:
                 try:
                     for candidate in sources[provider](query, video, orientation, limit):
+                        if domain_only and not (
+                            candidate.license.startswith(("CC0", "Public domain", "PDM", "Domínio público"))
+                            or _public_domain(candidate.license_url)
+                        ):
+                            continue
                         with TemporaryDirectory(dir=cache) as directory:
                             stage = Path(directory)
                             asset = _checked_asset(candidate, stage, video, orientation, limit)
@@ -396,13 +435,36 @@ def local_media_file(value):
 
 
 def _local_credit(path, kind):
-    return {"source": LOCAL_SOURCE, "title": path.name, "type": kind, "start_sec": 0}
+    credit = {"source": LOCAL_SOURCE, "title": path.name, "type": kind, "start_sec": 0}
+    if _semantic_shot_ids.get() is not None:
+        declared = media_credit(path)
+        for field in ("source", "title", "author", "license", "license_url", "url"):
+            value = declared.get(field)
+            if value and isinstance(value, str):
+                if field in {"license_url", "url"}:
+                    try:
+                        raw_url = urlsplit(value)
+                        if raw_url.scheme != "https" or not raw_url.hostname or raw_url.username or raw_url.password:
+                            continue
+                        value = raw_url._replace(query="", fragment="").geturl()
+                    except ValueError:
+                        continue
+                credit[field] = value
+        offset = declared.get("source_offset_sec")
+        if isinstance(offset, (int, float)) and isfinite(offset) and offset >= 0:
+            credit["source_offset_sec"] = offset
+    return credit
 
 
 def _local_image(path, visual, narration):
     stat = path.stat()
     source_id = broll_selector._fingerprint(path, stat.st_size, stat.st_mtime_ns)
-    key = _key_for([source_id, path.name, visual, narration, "local-poster-v1"])
+    options = [source_id, path.name, visual, narration, "local-poster-v1"]
+    used_ids = _semantic_shot_ids.get()
+    semantic_video = used_ids is not None and path.suffix.lower() == ".mp4"
+    if semantic_video:
+        options.extend([semantic_broll.MODEL_REVISION, semantic_broll.INDEX_VERSION])
+    key = _key_for(options)
     cache = _cache_root() / "local"
     cache.mkdir(parents=True, exist_ok=True)
     output = cache / f"{key}.png"
@@ -412,10 +474,16 @@ def _local_image(path, visual, narration):
             with TemporaryDirectory(dir=cache) as directory:
                 stage = Path(directory) / output.name
                 if path.suffix.lower() == ".mp4":
-                    shot = broll_selector.select_shot(path, visual, narration,
-                                                     device=broll_selector.scoring_device(_semantic_cpu.get()))
-                    _, _, duration = _video_probe(path)
-                    at = min(duration - .04, shot.frame_sec) if shot else duration / 2
+                    dimensions = _video_probe(path)
+                    duration = dimensions[2]
+                    if semantic_video:
+                        shot = semantic_broll.select_shot(path, visual, narration, video_info=dimensions,
+                                                         credit=_local_credit(path, "video"))
+                        at = min(duration - .04, shot["frame_sec"])
+                    else:
+                        shot = broll_selector.select_shot(path, visual, narration,
+                                                         device=broll_selector.scoring_device(_semantic_cpu.get()))
+                        at = min(duration - .04, shot.frame_sec) if shot else duration / 2
                     broll_selector._ffmpeg("-ss", max(0, at), "-i", path, "-frames:v", "1", "-threads", "1", stage)
                 else:
                     with Image.open(path) as image:
@@ -452,6 +520,11 @@ def fetch_broll(query="", source="auto", orientation="horizontal", duration_sec=
         identity = [local.name, broll_selector._fingerprint(local, stat.st_size, stat.st_mtime_ns)]
     else:
         identity = [" ".join(query.casefold().split()), source, orientation]
+        if _public_domain_only.get():
+            identity.append("public-domain")
+    used_ids = _semantic_shot_ids.get()
+    if used_ids is not None:
+        return _fetch_semantic_broll(local, query, source, orientation, duration_sec, visual, narration, identity, used_ids)
     key = _key_for([identity, float(duration_sec), visual, narration, broll_selector.INDEX_VERSION,
                     broll_selector.MODEL_REVISION, "broll-v2"])
     cache = _cache_root() / "broll"
@@ -494,3 +567,36 @@ def fetch_broll(query="", source="auto", orientation="horizontal", duration_sec=
             if local:
                 raise
             return None
+
+
+def _fetch_semantic_broll(local, query, source, orientation, duration, visual, narration, identity, used_ids):
+    local_credit = _local_credit(local, "video") if local else None
+    key = _key_for([identity, float(duration), visual, narration, semantic_broll.INDEX_VERSION,
+                    semantic_broll.MODEL_REVISION, sorted(used_ids), semantic_broll.METHOD, local_credit])
+    cache = _cache_root() / "broll"
+    cache.mkdir(parents=True, exist_ok=True)
+    output = cache / f"{key}-{semantic_broll.METHOD}.mp4"
+    with output.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        selection = media_credit(output).get("selection", {})
+        if not output.is_file() or not selection.get("shot_id"):
+            reel = local or _fetch(query, source, orientation, video=True, limit=MAX_REEL_SEC)
+            if not reel:
+                return None
+            credit = local_credit or media_credit(reel)
+            selection = semantic_broll.select_shot(
+                reel, visual, narration, duration_sec=duration, used_ids=used_ids, credit=credit,
+                video_info=_video_probe(reel),
+            )
+            start, end = selection["start_sec"], selection["end_sec"]
+            if "source_offset_sec" in credit:
+                offset = credit["source_offset_sec"]
+                selection.update(source_start_sec=start + offset, source_end_sec=end + offset)
+            with TemporaryDirectory(dir=cache) as directory:
+                stage = Path(directory) / output.name
+                _clip(reel, stage, start, end - start)
+                credit.update(start_sec=start, selection=selection)
+                _save_credit(output.with_suffix(".json"), credit)
+                stage.replace(output)
+        used_ids.add(selection["shot_id"])
+        return _record(output)

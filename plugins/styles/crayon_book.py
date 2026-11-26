@@ -6,6 +6,7 @@ from array import array
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from functools import lru_cache
+from itertools import repeat
 from math import cos, radians, sin, sqrt, tau
 from pathlib import Path
 from random import Random
@@ -15,8 +16,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from pydantic import BaseModel, Field
 
+from core.color_grade import grade_photo, lut_filter
+from core.director import DirectionProfile, DirectorError
+from core.encoder import video_rgb_frames
+from core.media_fetcher import fetch_broll, fetch_image, local_media_file, media_credit
 from core.motion import camera_accents, ease_in_out_cubic, ease_out_back, visual_cues
-from core.registry import register_style
+from core.registry import register_direction, register_style
 from core.schema import SceneRender
 from plugins.media.openmoji_stickers import sticker_path
 from plugins.styles import paint_art as art
@@ -28,6 +33,7 @@ from plugins.styles.paint_captions import word_key, word_starts
 from plugins.styles.paint_motion import boil_offset, camera, drawing_step, saw_wrist
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
+LOCAL_MEDIA_LUT = "doc_clean_neutral"
 
 PENCIL = {
     art.INK: INDIGO, art.SKIN: "#f4c7a4", art.RED: "#d4483c", art.JADE: "#62a24c",
@@ -117,6 +123,7 @@ class BookOptions(BaseModel):
     background: Literal["yard", "workshop", "parade", "storm", "sea", "mountains", "shore"] = "yard"
     camera: Literal["static", "zoom_in_fast", "zoom_out", "pan_left", "pan_right", "float"] = "float"
     headline: str = ""
+    media_file: str | None = None
     characters: list[BookCharacter] = Field(default_factory=list)
     props: list[BookProp] = Field(default_factory=list)
     stickers: list[BookSticker] = Field(default_factory=list)
@@ -629,14 +636,37 @@ def _camera_image(image, options, at, duration, punch, *, rhythm=(0.0, 0.0)):
     return image.resize(image.size, Image.Resampling.BILINEAR, (left, top, left + width / zoom, top + height / zoom))
 
 
+def _photo_page(value, size):
+    photo = fetch_image(media_file=value)
+    with Image.open(grade_photo(photo, LOCAL_MEDIA_LUT)) as image:
+        return ImageOps.fit(image.convert("RGB"), size, Image.Resampling.LANCZOS)
+
+
 def _first_page(options, size):
-    return _camera_image(_landscape(size, options.background).image(), options, 0, 1, None)
+    page = _photo_page(options.media_file, size) if options.media_file else _landscape(size, options.background).image()
+    return _camera_image(page, options, 0, 1, None)
 
 
-def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch, next_options, narration, pace=1):
+def _media_pages(options, timing, size, narration):
+    path = local_media_file(options.media_file)
+    if path.suffix.lower() == ".mp4":
+        video = fetch_broll(media_file=path, visual=options.headline, narration=narration)
+        if video:
+            frames = video_rgb_frames(video, size, timing.fps, timing.frame_count, filters=lut_filter(LOCAL_MEDIA_LUT))
+            credit = media_credit(video)
+            picked = credit.get("selection")
+            selection = {**picked, "source": credit["title"]} if picked else None
+            return (Image.frombytes("RGB", size, data) for data in frames), selection
+    return repeat(_photo_page(path, size), timing.frame_count), None
+
+
+def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch, next_options, narration, pace=1,
+            *, plates=None, suppress_captions=False):
     duration = timing.duration_sec
     aligned = timing.caption_blocks
-    if timing.continuous:
+    if suppress_captions:
+        subtitles, caption_starts = (), ()
+    elif timing.continuous:
         subtitles = tuple(aligned_caption(block.text, size) for block in aligned)
         caption_starts = [block.start_sec for block in aligned]
     else:
@@ -645,7 +675,7 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
     caption_delay = .18
     heading = title(options.headline, size) if options.headline else None
     wash_at = _cue(words, options.wash_at_word, default=.08 * pace)
-    opening = _opening_plan(options, size, layers)
+    opening = _opening_plan(options, size, layers) if plates is None else None
     tracks = _pose_tracks(options.characters, words, pace)
     last_frame = (timing.frame_count - 1) / timing.fps
     turn_at = max(0.0, last_frame - .57 * pace) if timing.continuous else max(timing.audio.duration_sec, last_frame - .57)
@@ -654,18 +684,21 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
         at = index / timing.fps
         step = drawing_step(index, timing.fps)
         mouth = mouths[index] if index < len(mouths) else "closed"
-        sheet = _drawing(options, size, layers, stickers, at, step, mouth, punch, tracks, pace)
-        dry = sheet.image()
-        wet = sheet.image(_wash(size, options.wash)) if options.wash else None
-        page = dry
-        if wet is not None and options.wash_prepainted:
-            page = wet
-        elif wet is not None and at > wash_at:
-            reveal = (at - wash_at) / (.68 * pace)
-            page = wet if reveal >= 1 else Image.composite(wet, dry, _sweep(size, reveal))
-        if at < OPENING_SECONDS * pace:
-            # Let the first chalk strokes and the page title be visible on the opening frame.
-            page = opening.frame(page, .16 + (OPENING_SECONDS - .16) * at / (OPENING_SECONDS * pace))
+        if plates is not None:
+            page = next(plates)
+        else:
+            sheet = _drawing(options, size, layers, stickers, at, step, mouth, punch, tracks, pace)
+            dry = sheet.image()
+            wet = sheet.image(_wash(size, options.wash)) if options.wash else None
+            page = dry
+            if wet is not None and options.wash_prepainted:
+                page = wet
+            elif wet is not None and at > wash_at:
+                reveal = (at - wash_at) / (.68 * pace)
+                page = wet if reveal >= 1 else Image.composite(wet, dry, _sweep(size, reveal))
+            if at < OPENING_SECONDS * pace:
+                # Let the first chalk strokes and the page title be visible on the opening frame.
+                page = opening.frame(page, .16 + (OPENING_SECONDS - .16) * at / (OPENING_SECONDS * pace))
         frame = _camera_image(page, options, at / pace, duration / pace, None if punch is None else punch / pace,
                               rhythm=camera_accents(at, duration))
         for index_cue, cue in enumerate(visual_cues(duration)):
@@ -677,17 +710,39 @@ def _frames(spec, timing, options, size, words, layers, stickers, mouths, punch,
                          265 + 246 * ease_in_out_cubic(age / .65), fill=BROWN, width=max(2, min(w, h) // 155))
         if heading:
             heading.draw(frame, max(.13, at / pace), step)
-        if not timing.continuous and at >= caption_delay:
+        if not suppress_captions and not timing.continuous and at >= caption_delay:
             subtitles[bisect_right(caption_starts, at) - 1].draw(frame, at - caption_delay, step)
         if next_options is not None and turn_at < at <= last_frame:
             if incoming is None:
                 incoming = _first_page(next_options, size)
             frame = page_turn(frame, incoming, (at - turn_at) / (last_frame - turn_at))
-        if timing.continuous:
+        if not suppress_captions and timing.continuous:
             caption = bisect_right(caption_starts, at) - 1
             if caption >= 0 and at < aligned[caption].end_sec:
                 subtitles[caption].draw(frame, 1, step)
         yield frame.resize((spec.width, spec.height), Image.Resampling.BICUBIC).tobytes()
+    if plates is not None:
+        next(plates, None)
+
+
+def _directed_visual(options, scene, generated):
+    if options.media_file:
+        return "local_film" if Path(options.media_file).suffix.lower() == ".mp4" else "local_photo"
+    if "background" not in scene:
+        raise DirectorError("informe background")
+    return options.background
+
+
+register_direction("crayon_book")(DirectionProfile(
+    "skills/crayon_book/SKILL.md", ("3. Conte a história", "5. Salve"),
+    (
+        "Use headline curto e background explícito, entre yard/workshop/parade/storm/sea/mountains/shore "
+        "para mudar de paleta e ambiente. Use personagens com x/y normalizados perto de (.50,.76), "
+        "pose neutral, expression neutral/happy/sad e props kind ark/saw/planks/cloud/mountain/rainbow quando relevantes. "
+        "wash rain ou stars e câmera float/pan_left/pan_right/zoom_out. Respeite o ritmo pedido em cenas."
+    ),
+    BookOptions, _directed_visual,
+))
 
 
 @register_style("crayon_book")
@@ -709,8 +764,13 @@ def render_scene(spec, scene, timing, media):
     if scene.cut_music_for_punchline:
         punch = min((timing.frame_count - 1) / timing.fps,
                     _cue(words, options.punchline_at_word, default=max(0, timing.audio.duration_sec - .25 * pace)))
-    mouths = _rms_mouths(timing.audio.path, timing.audio.start_sample, timing.audio.samples, timing.fps) if options.characters else ()
-    return SceneRender(_frames(spec, timing, options, size, words, _layers(options, size, words),
-                               tuple(_stickers(options, words, size, media, pace)), mouths, punch, next_options,
-                               scene.narration, pace), punchline_at_sec=punch,
+    plates, selection = _media_pages(options, timing, size, scene.narration) if options.media_file else (None, None)
+    layers = _layers(options, size, words) if plates is None else None
+    stickers = tuple(_stickers(options, words, size, media, pace)) if plates is None else ()
+    mouths = (_rms_mouths(timing.audio.path, timing.audio.start_sample, timing.audio.samples, timing.fps)
+              if plates is None and options.characters else ())
+    return SceneRender(_frames(spec, timing, options, size, words, layers, stickers, mouths, punch, next_options,
+                               scene.narration, pace, plates=plates, suppress_captions=scene.captions_hidden), punchline_at_sec=punch,
+                       color_luts=(LOCAL_MEDIA_LUT,) if plates is not None else (),
+                       broll_selection={"scene": scene.id, **selection} if selection else None,
                        caption_texts=tuple(caption_pages(scene.narration, size)) if not timing.continuous else None)

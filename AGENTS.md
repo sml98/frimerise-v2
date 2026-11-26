@@ -7,9 +7,18 @@
 - Antes de implementar um estilo novo, consulte a implementação mais próxima em `~/referencias/lemo-opuscar` ou `~/referencias/hyperframes`. Leia o código que entrega o efeito, o demo e sua licença antes de escrever a implementação.
 - Reaproveite componentes, curvas de câmera, técnicas de composição e efeitos sonoros do código de referência. Registre no projeto o arquivo de origem, a revisão e a licença de cada adaptação.
 - Use OpenMoji ou Twemoji para stickers. Os episódios narrados em português devem declarar `tts_locale: "pt-BR"` e usar vozes nativas ou gravações com a mesma localidade declarada.
+- Quando o usuário pedir produção autônoma, use `python -m frimerise produce` com `--topic` e `--duration`, ou `--audio` para preservar uma locução pronta. O diretor consulta só o `SKILL.md` do cartucho escolhido. Use `--plan-only` para aprovação prévia e `--episode` para renderizar o JSON editado sem outra chamada ao provedor. Preserve a contagem real de tokens no relatório e nunca registre credenciais.
 
 ## Erros Proibidos (Lições Aprendidas)
 
+- No Cut-out Paper documental, use recortes de fotos, gravuras ou ilustrações de acervo para os personagens de `action_cutout_puppet`. É proibido montar pessoas com primitivas SVG como `<rect>`, `<circle>` e `<polygon>`. Anime os recortes em camadas a 30 fps.
+- Para mistério, suspense, terror e documentário histórico, use a voz PT-BR masculina do perfil grave. Aplique `pronunciation_overrides` antes da síntese e preserve a grafia da narração nas legendas.
+- Ancore a imagem à fala com `visual_anchor`, especialmente para carimbos, traços, nomes e ampliações. Use a pílula escura no Cut-out Paper sobre material claro ou denso. Identifique gravuras de contexto como tal e confira o enquadramento das palavras em fac-símiles e a legibilidade das legendas no MP4.
+- No perfil `studio_sota`, use checkpoints DA3-SMALL, DA3-BASE ou DA3MONO-LARGE, todos Apache-2.0. DA3-LARGE, DA3-GIANT e DA3NESTED ficam fora da lista aprovada, inclusive suas variantes. Use MI-GAN MIT para preencher regiões descobertas pelo parallax.
+- F5-TTS, Fish Speech, MMAudio e Pedalboard GPLv3 são proibidos no console de estúdio. Use Chatterbox PT-BR MIT, Edge PT-BR para a contingência e DASP/SciPy com medição pyloudnorm para o DSP.
+- Antes de costurar blocos do Chatterbox, transcreva cada trecho sem fornecer o roteiro ao reconhecedor e repita a síntese ao detectar fala extra. Preserve as pausas na montagem e confirme a última frase também no AAC final.
+- Rode EmbeddingGemma 2 com texto e visão em `float32` na CPU ou `bfloat16` na L4. `float16` é proibido. Normalize novamente os vetores truncados e preserve os metadados e a licença de cada plano.
+- Para `studio_sota`, inclua o parecer real do Qwen3.5-9B no QC e entregue as grades temporais com até 12 células por página. Reprove qualquer cena com nota editorial de 1 ou 2. Reserve `--skip-vlm-qc` para testes offline.
 - Use somente checkpoints com licença comercial MIT ou Apache explicitamente aprovados em `core/cutout_matting.py`. `bria-rmbg` e `RMBG-2.0` são proibidos. Revise os créditos da própria mídia e deduplique palavras e nomes repetidos.
 - Em `subject_depth_title`, fundo e recorte compartilham enquadramento, escala, posição e animação em todos os fotogramas. Restrinja fita aos cantos de papéis retangulares e mantenha todo o bounding box das silhuetas livre.
 - Anime câmera, entradas, saídas e deslocamentos a 30 fps. Use `easeOutBack` nas entradas e `easeInOutCubic` na câmera. Reserve 12 Hz ao micro-boil de borda ou textura. Mostre conteúdo no primeiro quadro e distribua mudanças de composição a cada 2,5–3 s em cenas de mais de 5 s.

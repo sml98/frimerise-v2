@@ -54,6 +54,51 @@ O launcher do Colab aceita episódios de `episodes/` ou `examples/` com `--aspec
 
 Cada render produz `<slug>_qc/qa_grid.png` e `<slug>_qc/relatorio_qc_blindagem.json` ao lado do vídeo. O gate avalia o AAC final, a duração, o primeiro quadro, a pontuação da fala por cena, as legendas e a variação visual sem contar a faixa de legenda. Em cenas acima de 5 s, as janelas avaliadas e suas falhas são registradas em segundos. Para repetir a inspeção usando o relatório existente, rode `python -m core.qc_gate exports/<slug>.mp4`.
 
+### Produção em um comando
+
+```bash
+python -m frimerise produce --topic "A história do correio ferroviário" \
+  --cartridge cutout_paper --duration 120 --aspect 9:16 --bgm auto
+
+python -m frimerise produce --audio narracao.wav \
+  --cartridge motion_editorial --aspect 16:9 --bgm auto
+
+python -m frimerise produce --audio narracao.wav \
+  --cartridge cutout_paper --aspect 9:16 --plan-only --output-dir exports/revisao
+
+# Após editar o plano e adicionar um media_file local, reaproveite a locução.
+python -m frimerise produce --episode exports/revisao/episodio_gerado.json \
+  --audio narracao.wav --bgm auto --output-dir exports/revisao
+```
+
+Os três cartuchos aceitam `produce` a 30 fps. O diretor procura a credencial na variável `DEEPSEEK_API_KEY` e depois na entrada `settings.deepseek_api_key` de cada banco, na ordem `FRIMERISE_DB`, `./frimerise.db` e `~/frimerise-cinema-studio/data/frimerise.db`. Após um HTTP 401, tenta a próxima credencial distinta. Se todas falharem, `--topic` encerra com erro antes de gravar o episódio ou renderizar. O diretor envia só um trecho do guia do cartucho escolhido e tenta reparar o JSON uma vez se o plano falhar na validação. [Modelos DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/)
+
+Por tema, o diretor planeja a locução em terceira pessoa e o motor sintetiza uma tomada contínua, ajustando levemente o ritmo para a duração pedida. Com `--audio`, o Whisper segmenta a fala antes de o diretor escolher a composição visual. Inclua `--alignment <arquivo.json>` no render para exportar os tempos. Para retomar um roteiro editado por tema, informe `--episode` e a duração desejada.
+
+Por padrão, as consultas de mídia de `produce` aceitam arquivos de domínio público ou CC0. `--allow-licensed-media` habilita também as fontes com licenças comerciais ou de atribuição já suportadas. Use `media_file` no plano editado com mídia própria ou autorizada, com caminho relativo a `--assets-root` (o diretório atual por padrão).
+
+### Produção editorial de estúdio
+
+Use `--production-profile studio_sota` em novos planos para selecionar Chatterbox PT-BR na L4, com fallback Edge PT-BR. O perfil mantém a renderização a 30 fps e exige parecer editorial no QC. Configure `FRIMERISE_VLM_BACKEND=local_l4` no Colab ou `FRIMERISE_VLM_BACKEND=api` com o endpoint e a credencial correspondente no ambiente. Use `--skip-vlm-qc` nos testes offline.
+
+No Colab, instale `requirements-studio-colab.txt` sobre a base PyTorch CUDA. Use ambientes isolados para Chatterbox e ACE-Step, com `FRIMERISE_CHATTERBOX_PYTHON` e `FRIMERISE_ACE_STEP_PYTHON` apontando para os respectivos interpretadores. A distribuição oficial ACE-Step 1.5 usa o encoder Qwen3-Embedding-0.6B Apache-2.0.
+
+```bash
+FRIMERISE_VLM_BACKEND=local_l4 python -m frimerise produce \
+  --episode examples/vampiro_1725_v4_sota.json --duration 45 \
+  --assets-root /caminho/para/acervo --bgm adaptive --output-dir exports/vampiro_1725_v4_sota
+```
+
+O cartucho Cut-out Paper usa `photo_25d_parallax` com profundidade DA3 Apache-2.0 e inpainting MI-GAN MIT. O B-roll pode ser ranqueado contra a fala em português pelo EmbeddingGemma 2. O relatório guarda os modelos efetivamente executados, o parecer por cena, o áudio e a montagem.
+
+Os pacotes de validação no Google Drive incluem os MP4s e os arquivos locais usados pelos roteiros. Baixe a pasta `media/` do episódio e aponte `--assets-root` para o diretório que contém essa pasta. Os exemplos v2 e v3 usam as mídias locais do pacote v3. [Pacote v3](https://drive.google.com/drive/folders/14wqKFDHde_IDeGH5YRBdPts-uzpVkGeF) · [Pacote v4 SOTA](https://drive.google.com/drive/folders/1CqwLsKjlqUeoAE4WVty-3mS9M_3LcRdH)
+
+`dynamic_edit: true` habilita a auditoria editorial e as pausas escritas em `pause_after_sec` na locução contínua. As pausas são inseridas entre palavras alinhadas e entram na duração alvo. `pronunciation_overrides` troca a grafia só na entrada do TTS. A legenda mantém o roteiro original.
+
+`transition` seleciona `cut_on_beat`, `zoom_punch`, `whip_pan`, `paper_rip` ou `flash_cut`. `music_mood` escolhe `tense_low`, `pulse_build`, `drop_silence` ou `resolve`. No modo dinâmico, os relatórios registram os efeitos com tempos por cena, a duração média, a colisão medida no Chromium e a diversidade. [Modos Cut-out Paper](cartridges/cutout_paper/SKILL.md#montagem-dinâmica)
+
+`--plan-only` salva `episodio_gerado.json` e mostra a contagem de tokens no terminal. O render grava `episodio.mp4`, `episodio_fontes.md`, `qa_grid.png` e `relatorio_director.json` em `exports/<slug>/` ou em `--output-dir`. O relatório identifica o modo de entrada e o provedor. Para um plano novo, exige consumo positivo e soma os tokens que a API informou nas chamadas de planejamento e de reparo. Para um roteiro lido com `--episode`, a contagem é zero.
+
 ### Áudio Único Contínuo
 
 ```bash
@@ -89,7 +134,7 @@ python -m core.engine episodio.json exports/episodio.mp4 --audio narracao.wav \
   --voice-ref referencia.wav --bgm auto
 ```
 
-A voz passa por filtro de graves, equalização, compressão e limiter do Pedalboard, com filtros equivalentes do FFmpeg como fallback. `--bgm auto` gera uma cama instrumental procedural original. A trilha fica em −20 dB nas pausas e o sidechain usa a voz para reduzir seu ganho em até 12 dB adicionais durante a fala. O `librosa` detecta as batidas. Os cartuchos podem usar `SceneTiming.beats_sec` e `core.audio_master.safe_beat` para mover um carimbo ou wipe em até 150 ms, dentro de uma pausa entre palavras. Os cortes de cena e a legenda mantêm o alinhamento original.
+A voz passa por um filtro de graves, equalização, compressão e limiter. O DSP de estúdio usa SciPy e DASP com medição de loudness pelo pyloudnorm. `--bgm auto` gera uma cama instrumental procedural original. `--bgm adaptive` ativa a geração instrumental no perfil de estúdio. A trilha fica em −20 dB nas pausas e o sidechain usa a voz para reduzir seu ganho em até 12 dB adicionais durante a fala. O `librosa` detecta as batidas. Os cartuchos podem usar `SceneTiming.beats_sec` e `core.audio_master.safe_beat` para mover um carimbo ou wipe em até 150 ms, dentro de uma pausa entre palavras.
 
 `--denoise` habilita o DeepFilterNet em 48 kHz quando houver o executável `deep-filter` no `PATH` ou o backend Python instalado. No Colab, o launcher tenta preparar o executável quando a opção é usada. Se estiver indisponível, a masterização segue com `denoise_applied: false` no relatório. O mix final tem fades de 30 ms e passa pela normalização em duas passagens do FFmpeg. [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)
 

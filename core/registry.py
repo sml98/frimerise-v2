@@ -27,6 +27,7 @@ def _register(kind):
 
 
 register_style = _register("style")
+register_direction = _register("direction")
 register_tts = _register("tts")
 register_media = _register("media")
 register_audio = _register("audio")

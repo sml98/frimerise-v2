@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from core.director import configure_production
 from core.encoder import run_ffmpeg
 from core.engine import add_audio_arguments, audio_overrides, render
 from core.schema import EpisodeSpec
@@ -52,10 +53,11 @@ def main():
     add_audio_arguments(parser)
     args = parser.parse_args()
     spec = with_aspect(EpisodeSpec.from_json(args.episode.read_bytes()), args.aspect)
-    encoder, report = render(audio_overrides(spec, args), args.output, audio=args.audio, assets_root=args.assets_root,
+    encoder, report = render(audio_overrides(configure_production(spec), args), args.output, audio=args.audio,
+                             assets_root=args.assets_root,
                              continuous=args.continuous, alignment=args.alignment, bgm=args.bgm,
                              denoise=args.denoise, voice_ref=args.voice_ref, audio_report=args.audio_report,
-                             semantic_cpu=args.semantic_cpu)
+                             semantic_cpu=args.semantic_cpu, skip_vlm_qc=args.skip_vlm_qc)
     result = {"encoder": encoder, **asdict(report)}
     if args.inspect:
         result["inspection"] = inspect(args.output, args.inspect, spec, report.frame_count)

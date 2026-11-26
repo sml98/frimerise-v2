@@ -7,7 +7,7 @@ from functools import cache
 from core.registry import TTSUnavailable, register_tts
 from core.schema import Speech, WordTiming
 
-NATIVE_PT_BR_VOICES = frozenset({"pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"})
+NATIVE_PT_BR_VOICES = frozenset({"pt-BR-AntonioNeural", "pt-BR-FranciscaNeural", "pt-BR-FabioNeural"})
 
 
 @cache
@@ -36,7 +36,7 @@ def _kokoro(text, voice, output, *, continuous=False):
 
 
 @register_tts("edge_kokoro_tts")
-def synthesize(text, *, voice_id, speech_style, output, locale=None, continuous=False):
+def synthesize(text, *, voice_id, speech_style, output, locale=None, continuous=False, pitch="+0Hz", rate="+0%"):
     voice = voice_id or "pt-BR-AntonioNeural"
     native_locale = "pt-BR" if voice in NATIVE_PT_BR_VOICES else None
     if locale and locale != native_locale:
@@ -51,7 +51,7 @@ def synthesize(text, *, voice_id, speech_style, output, locale=None, continuous=
     path = output.with_suffix(".mp3")
     metadata = output.with_suffix(".jsonl")
     try:
-        speech = edge_tts.Communicate(text, voice, boundary="WordBoundary", receive_timeout=20)
+        speech = edge_tts.Communicate(text, voice, pitch=pitch, rate=rate, boundary="WordBoundary", receive_timeout=20)
         if continuous:
             requests = tuple(speech.texts)
             if len(requests) != 1:
@@ -68,4 +68,4 @@ def synthesize(text, *, voice_id, speech_style, output, locale=None, continuous=
         raise TTSUnavailable(f"Edge TTS could not synthesize with voice {voice!r}") from error
     if not path.stat().st_size:
         raise TTSUnavailable(f"Edge TTS returned no audio for voice {voice!r}")
-    return Speech(path, words, locale=native_locale)
+    return Speech(path, words, locale=native_locale, voice_id=voice, pitch=pitch, rate=rate)
